@@ -78,6 +78,7 @@ class Source(BaseModel):
     people: list[str] = Field(default_factory=list)
     places: list[str] = Field(default_factory=list)
     correction: Optional[str] = None
+    intro: bool = False           # ответ на вопрос-знакомство: в главу не идёт
 
 
 class Topic(BaseModel):
@@ -119,6 +120,7 @@ class InterviewState(BaseModel):
     question: Optional[Question] = None
     asked: list[str] = Field(default_factory=list)   # тексты всех заданных вопросов
     turns: list[dict] = Field(default_factory=list)  # {q, src} | {q, skipped} | {q, declined}
+    photo: Optional[Image] = None  # фото, о котором текущий вопрос; прикрепляется к следующему ответу
 
 
 class Story(BaseModel):
@@ -129,6 +131,9 @@ class Story(BaseModel):
     narrator: str
     relation: str = ""
     narratorId: Optional[str] = None
+    narratorName: str = ""       # как представился — из вопроса-знакомства
+    narratorAddress: str = ""    # как к нему обращаться: «Анна Сергеевна», «Аня»
+    narratorGender: Literal["f", "m", ""] = ""  # для «рассказал/рассказала»; "" — неизвестно
     cover: Optional[Image] = None
     sessions: list[Session] = Field(default_factory=list)
     updated: str = "только что"
@@ -217,6 +222,13 @@ class InterviewerResult(BaseModel):
     question: Question
     topics: list[Topic] = Field(default_factory=list)  # обновлённый план интервью
     continueNote: str = ""
+
+
+class IntroResult(BaseModel):
+    """Разбор ответа на вопрос-знакомство."""
+    name: str = Field("", description="как человек представился, полностью")
+    address: str = Field("", description="как к нему обращаться; если не сказал — имя")
+    gender: Literal["f", "m", ""] = Field("", description="f — она, m — он, пусто — непонятно")
 
 
 class EditorResult(BaseModel):

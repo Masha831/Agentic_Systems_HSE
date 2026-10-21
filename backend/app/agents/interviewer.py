@@ -35,7 +35,9 @@ def build_interview_context(story: dict, event: str) -> dict:
     places = {id: p["name"] for id, p in store.list_("place", sid).items()}
     return {
         "story": {"title": story["title"], "about": story.get("about") or story["title"], "type": story["type"]},
-        "narrator": {"name": story["narrator"], "relation": story.get("relation") or "рассказчик"},
+        "narrator": {"name": story["narrator"], "relation": story.get("relation") or "рассказчик",
+                     "address": story.get("narratorAddress", ""),
+                     "gender": {"f": "она", "m": "он"}.get(story.get("narratorGender", ""), "неизвестно")},
         "session": story["interview"]["session"],
         "past_sessions": story.get("sessions", []),
         "continue_note": story.get("continueNote", ""),
@@ -51,14 +53,15 @@ def build_interview_context(story: dict, event: str) -> dict:
 
 
 def tidy_question(q: str) -> str:
-    """Страховка поверх промпта: без анкетного зачина и ровно один вопрос."""
+    """Страховка поверх промпта: без анкетного зачина и ровно один вопрос. Обращение в начале сохраняется."""
     q = q.strip()
-    m = re.match(r"^(Расскажите|Скажите|Подскажите),?\s+пожалуйста,?\s+(?=(как|что|кто|где|когда|почему|зачем|как[а-я]+|чем|сколько)\b)", q, re.I)
+    m = re.match(r"^(?P<addr>[^,?!.]{1,40},\s+)?(?P<ask>(Расскажите|Скажите|Подскажите),?\s+пожалуйста,?\s+)"
+                 r"(?=(как|что|кто|где|когда|почему|зачем|как[а-я]+|чем|сколько)\b)", q, re.I)
     if m:
-        q = q[m.end():]
-        q = q[0].upper() + q[1:]
+        rest = q[m.end():]
+        q = (m.group("addr") or "") + (rest if m.group("addr") else rest[0].upper() + rest[1:])
     else:
-        q = re.sub(r"^(Расскажите|Скажите),?\s+пожалуйста,?\s+", r"\1 ", q, flags=re.I)
+        q = re.sub(r"(Расскажите|Скажите),?\s+пожалуйста,?\s+", r"\1 ", q, count=1, flags=re.I)
     first = re.split(r"(?<=\?)\s+", q)[0]
     return first if first.endswith("?") else q
 
