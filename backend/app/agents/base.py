@@ -58,7 +58,7 @@ class Agent(Generic[T]):
         story = (ctx.get("story") or {}).get("id")
         store.put("trace", uuid.uuid4().hex[:12], {
             "story": story, "agent": self.name, "ms": int((time.time() - t0) * 1000),
-            "mock": config.MOCK, "model": self.model or config.YANDEX_MODEL, "prompt": prompt[:4000], "result": res.model_dump(),
+            "mock": config.MOCK, "provider": config.LLM_PROVIDER, "model": self.model or config.LLM_MODEL, "prompt": prompt[:4000], "result": res.model_dump(),
             "tool_calls": ctx.get("tool_calls", []),
             "at": time.strftime("%H:%M:%S"),
         }, story=story)

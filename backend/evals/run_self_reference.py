@@ -62,7 +62,7 @@ async def run(case):
     return not errors
 
 async def main():
-    if not config.YANDEX_API_KEY: raise RuntimeError('Set YANDEX_API_KEY locally')
+    if config.MOCK: raise RuntimeError('Set OPENROUTER_API_KEY (or YANDEX_API_KEY + YANDEX_FOLDER_ID) locally')
     results = [await run(case) for case in CASES]
     print(f'{sum(results)}/{len(results)} passed; semantic questions still need human review.',flush=True)
     if not all(results): raise SystemExit(1)

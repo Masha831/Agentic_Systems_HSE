@@ -62,7 +62,7 @@ def _404(fn):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "mock": config.MOCK, "model": config.YANDEX_MODEL}
+    return {"ok": True, "mock": config.MOCK, "provider": config.LLM_PROVIDER, "model": config.LLM_MODEL}
 
 
 @app.get("/api/state")

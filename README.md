@@ -8,7 +8,7 @@
 
 ```bash
 uv venv && uv pip install -r backend/requirements.txt     # или python -m venv .venv && pip install -r ...
-cp .env.example .env                                     # ключи Yandex AI Studio; без ключей — MOCK
+cp .env.example .env                                     # OPENROUTER_API_KEY (или ключи Yandex AI Studio); без ключей — MOCK
 .venv/bin/uvicorn backend.app.main:app --reload --port 8000
 # http://localhost:8000          — приложение
 # http://localhost:8000/docs     — Swagger
@@ -48,7 +48,7 @@ backend/app/
     interviewer.py   Интервьюер — следующий вопрос и план тем
     archivist.py     Архивист — люди, места, события, связи, вопросы на уточнение
     editor.py        Редактор — глава из ответов сессии
-  llm.py             Yandex AI Studio (OpenAI-совместимый API), structured output по pydantic-схеме
+  llm.py             OpenRouter (DeepSeek V4.1 Flash) или Yandex AI Studio — переключатель LLM_PROVIDER; structured output по схеме
   speech.py          SpeechKit: STT и TTS
   store.py           SQLite
   models.py          общий контракт (Person, Place, Event, Source, Claim=Link, InterviewState, StoryBlock…)

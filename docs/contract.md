@@ -5,7 +5,7 @@
 
 | Метод | Путь | Тело | Ответ |
 |---|---|---|---|
-| GET | `/api/health` | | `{ok, mock, model}` |
+| GET | `/api/health` | | `{ok, mock, provider, model}` |
 | GET | `/api/state` | | весь `window.POMNU`: `{user, types, stories[], people{}, places{}, events[], sources{}, chapters{}}` |
 | POST | `/api/stories` | `{type, title, about, narrator, relation, cover?}` | `Story` (с `interview.question` — первым вопросом) |
 | DELETE | `/api/stories/{sid}` | | `{ok}` — удаляет историю и все материалы |
@@ -84,9 +84,11 @@ WAV зарегистрирован для этой истории и приго�
 на анализ; результат сохраняется отдельно в SQLite (`kind=photo_analysis`). Повтор
 успешного анализа не оплачивается; после ошибки повтор возможен не раньше 60 секунд.
 
-Модель: `VISION_MODEL=qwen3.6-35b-a3b`, endpoint `YANDEX_VISION_BASE_URL`.
-Используются серверные `YANDEX_API_KEY` и `YANDEX_FOLDER_ID`; ключу нужен доступ к
-генеративным моделям. Запрос по [документации Яндекса](https://aistudio.yandex.ru/ru/docs/ai-studio/operations/generation/multimodels-request):
+Провайдер `VISION_PROVIDER` (по умолчанию как `LLM_PROVIDER`). OpenRouter: `VISION_MODEL`
+(по умолчанию `LLM_MODEL`, DeepSeek V4.1 Flash принимает изображения), `VISION_BASE_URL`, ключ
+`OPENROUTER_API_KEY`. Yandex: модель `YANDEX_VISION_MODEL=qwen3.6-35b-a3b` (или `VISION_MODEL`),
+endpoint `YANDEX_VISION_BASE_URL`, серверные `YANDEX_API_KEY` и `YANDEX_FOLDER_ID`; ключу нужен доступ к
+генеративным моделям. Запрос Yandex по [документации Яндекса](https://aistudio.yandex.ru/ru/docs/ai-studio/operations/generation/multimodels-request):
 OpenAI-совместимый Completions API, Base64 image_url, reasoning_effort=none.
 Сервер читает только свои `/media/<uuid>.jpg|png|webp`, не загружает внешние URL.
 В модель отправляется ориентированная JPEG-копия до 1536 пикселей по длинной стороне
