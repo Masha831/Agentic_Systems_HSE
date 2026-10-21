@@ -24,6 +24,13 @@ def check(case: dict, q: str, asked: list[str]) -> list[str]:
         errs.append("больше одного вопроса")
     if q in asked:
         errs.append("повтор вопроса")
+    if low.startswith("расскажите, пожалуйста"):
+        errs.append("шаблонное «Расскажите, пожалуйста»")
+    if asked and q.split()[:2] == asked[-1].split()[:2]:
+        errs.append("то же начало, что у прошлого вопроса")
+    rel = case.get("narrator", "").lower()
+    if rel and rel != "я" and low.startswith(rel):
+        errs.append("обращение по родству")
     for w in case.get("must_not_mention", []):
         if w in low:
             errs.append(f"запрещено: «{w}»")
