@@ -1053,7 +1053,7 @@
       Object.keys(result.added.people).forEach(id => S.fresh.add(id));
       Object.keys(result.added.places).forEach(id => S.fresh.add(id));
       mergeStory(s, result.story);
-      await discardDraft(s); t.photo = null; t.photoQ = null; t.rec = 'idle';
+      await discardDraft(s); t.photo = s.interview?.photo || null; t.photoQ = null; t.rec = 'idle';
       S.qEnter = true; redrawTalk(s, '#qText');
       const count = Object.keys(result.added.people).length + Object.keys(result.added.places).length + result.added.events.length;
       toast(count ? `Ответ сохранён. Новых материалов: ${count}` : 'Ответ сохранён');
@@ -1065,7 +1065,7 @@
           Object.assign(S.sources, state.sources); Object.assign(S.people, state.people); Object.assign(S.places, state.places);
           S.events = state.events;
           const updated = state.stories.find(x => x.id === s.id); if (updated) mergeStory(s, updated);
-          await discardDraft(s); t.photo = null; t.rec = 'idle';
+          await discardDraft(s); t.photo = s.interview?.photo || null; t.rec = 'idle';
           toast('Ответ сохранён, но обработка агентами не завершилась. Проверьте материалы перед продолжением.');
           await loadQuestion(s, true);
           return;
@@ -1083,7 +1083,7 @@
     try {
       const result = await API.skip(s.id, declined);
       mergeStory(s, result.story); await discardDraft(s);
-      t.photo = null; t.rec = 'idle'; S.qEnter = true; redrawTalk(s, '#qText');
+      t.photo = s.interview?.photo || null; t.rec = 'idle'; S.qEnter = true; redrawTalk(s, '#qText');
       toast(declined ? 'Хорошо, к этой теме больше не вернусь' : 'Вопрос отложен — тема осталась в списке');
     } catch (e) { t.rec = 'idle'; redrawTalk(s); toast(e.message); }
   }
@@ -1350,7 +1350,7 @@
     const s = await API.createStory({type: selectedType(), title: about.charAt(0).toUpperCase() + about.slice(1),
       about, narrator: relation === 'я' ? D.user.name : narrator, relation, cover: C.photo});
     s.demo = false; s.talk = newTalk(s.interview?.session || 1);
-    s.talk.photo = s.interview?.photo || C.photo;
+    s.talk.photo = s.interview?.photo || null; // фото покажется со своим вопросом — после знакомства
     S.stories.unshift(s);
     return s.id;
   }

@@ -126,8 +126,7 @@ async def answer(sid: str, text: str, typed: bool = False, edited: bool = False,
     n = sum(1 for x in store.list_("source", sid).values() if x["session"] == session) + 1
     src_id = f"{sid}-{session}-{n}"
     is_intro = q.get("topic") == "intro"
-    if not is_intro:
-        photo = photo or s["interview"].pop("photo", None)
+    photo = None if is_intro else (photo or s["interview"].pop("photo", None))
 
     # 1. оригинал сохраняется до любых агентов
     src = {"story": sid, "session": session, "n": n, "date": time.strftime("%d.%m"), "q": q["text"],
