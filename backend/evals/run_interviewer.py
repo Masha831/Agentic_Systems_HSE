@@ -24,12 +24,12 @@ def check(case: dict, q: str, asked: list[str]) -> list[str]:
         errs.append("больше одного вопроса")
     if q in asked:
         errs.append("повтор вопроса")
-    if low.startswith("расскажите, пожалуйста"):
+    if "расскажите, пожалуйста" in low:
         errs.append("шаблонное «Расскажите, пожалуйста»")
     if asked and q.split()[:2] == asked[-1].split()[:2]:
         errs.append("то же начало, что у прошлого вопроса")
     rel = case.get("narrator", "").lower()
-    if rel and rel != "я" and low.startswith(rel):
+    if rel and rel != "я" and low.startswith(rel) and not low.startswith(case.get("address", "").lower() or "\0"):
         errs.append("обращение по родству")
     for w in case.get("must_not_mention", []):
         if w in low:
@@ -39,8 +39,13 @@ def check(case: dict, q: str, asked: list[str]) -> list[str]:
 
 async def run(case: dict) -> bool:
     s = await orchestrator.create_story({"type": "family", "title": case["title"], "narrator": case["narrator"], "relation": case["relation"]})
-    sid, asked, ok = s["id"], [s["interview"]["question"]["text"]], True
+    sid, ok = s["id"], True
     print(f"\n=== {case['id']}: {case['expect']}")
+    intro = case.get("intro", f"Меня зовут {case['narrator']}.")
+    r = await orchestrator.answer(sid, intro)
+    st = store.get("story", sid)
+    print(f"  знакомство: «{intro}» → имя={st['narratorName']!r}, обращение={st['narratorAddress']!r}, род={st['narratorGender']!r}")
+    asked = [r["question"]["text"]]
     print(f"  Q0: {asked[0]}")
     for i, a in enumerate(case["answers"], 1):
         print(f"  A{i}: {a}")

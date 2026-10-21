@@ -23,7 +23,13 @@
 
 ## Ключевые формы
 
-- `Story.interview` — серверное состояние разговора: `{session, question, asked[], turns[]}`.
+- `Story.interview` — серверное состояние разговора: `{session, question, asked[], turns[], photo}`.
+  `photo` — фото, о котором текущий вопрос (история начата с фото); прикрепляется к следующему ответу.
+- Первый вопрос новой истории — всегда знакомство (`topic: "intro"`): имя, обращение, «он»/«она».
+  Ответ заполняет `Story.narratorName`, `narratorAddress`, `narratorGender` (`f`|`m`|`""`) и создаёт
+  карточку рассказчика (`Person.narrator=true`, `Story.narratorId`). В главу этот ответ не идёт (`Source.intro=true`).
+  Если история начата с фото, вопрос про фото — вторым.
+- Тексты фиксированных вопросов и событий для Интервьюера — `backend/app/agents/prompts/texts.json`.
 - `Story.topics[]` — план интервью `{id, title, status: done|current|later|declined}`.
 - `Story.clarify[]` — вопросы Архивиста на подтверждение `{id, src, text, yes, no, yesMsg, noMsg, apply:{yes:{role|links|note}}, resolved}`.
 - `Person.links[]` — `{to, label, src}`: связь ВСЕГДА со ссылкой на Source, где она сказана (это наш Claim).
