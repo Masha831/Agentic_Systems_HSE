@@ -1,0 +1,21 @@
+{
+	auto_https off
+	admin off
+}
+
+# HTTPS даёт туннель или внешний прокси; здесь только пароль и проксирование.
+:8080 {
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
+	reverse_proxy app:8000 {
+		# WebSocket (/api/stories/*/transcribe/live) и долгое распознавание: таймауты ≥ 330 с (docs/voice-check.md)
+		flush_interval -1
+		transport http {
+			dial_timeout 10s
+			read_timeout 360s
+			write_timeout 360s
+		}
+	}
+}

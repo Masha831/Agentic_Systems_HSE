@@ -16,6 +16,10 @@ VISION_MODEL = os.getenv("VISION_MODEL", "qwen3.6-35b-a3b")
 YANDEX_VISION_BASE_URL = os.getenv("YANDEX_VISION_BASE_URL", "https://ai.api.cloud.yandex.net/v1")
 TTS_VOICE = os.getenv("TTS_VOICE", "alena")
 
+# Доп. хосты для Origin у WebSocket живой расшифровки (через запятую, например "pomnu.example.com").
+# Пусто — только тот же хост, что в заголовке Host.
+ALLOWED_ORIGINS = {h.strip().lower() for h in os.getenv("ALLOWED_ORIGINS", "").split(",") if h.strip()}
+
 MOCK = os.getenv("MOCK", "0") == "1" or not (YANDEX_API_KEY and YANDEX_FOLDER_ID)
 
 DB_PATH = ROOT / os.getenv("DB_PATH", "backend/data/pomnu.sqlite3")

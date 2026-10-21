@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+.env
+.env.*
+!.env.example
+backend/data
+node_modules
+__pycache__
+*.pyc
+.idea
+.vscode
+.DS_Store
