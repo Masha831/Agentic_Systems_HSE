@@ -1,4 +1,4 @@
-/* Логика прототипа «Помню»: маршруты, разговор с агентом (имитация записи и обработки),
+/* «Помню»: маршруты, голосовой разговор через API,
    сборка главы, люди / места и события. Данные — assets/data.js. */
 (function () {
   'use strict';
@@ -37,7 +37,7 @@
     return { session, pos: 0, turns: [], rec: 'idle', photo: null, photoQ: null, draft: '', dur: 0, step: 0, failed: false, recStart: 0 };
   }
   const S = {
-    stories: D.stories.map((s) => Object.assign(clone(s), { demo: true, talk: newTalk(s.sessions.length + 1) })),
+    stories: D.stories.map((s) => Object.assign(clone(s), { demo: !D.server, talk: Object.assign(newTalk(s.interview?.session || s.sessions.length + 1), {turns: clone(s.interview?.turns || []), photo: s.interview?.photo || null}) })),
     people: clone(D.people),
     places: clone(D.places),
     events: clone(D.events),
@@ -83,18 +83,9 @@
   const scriptOf = (s) => D.scripts[s.demo ? s.id : s.type] || [];
 
   function currentQuestion(s) {
-    const t = s.talk;
-    if (t.photoQ) return t.photoQ;
-    const script = scriptOf(s);
-    while (t.pos < script.length) {
-      const q = script[t.pos];
-      const topic = s.topics.find((x) => x.id === q.topic);
-      const missing = q.requires && !S.people[rid(s, q.requires)];
-      if (missing || (topic && topic.status === 'declined')) { t.pos += 1; continue; }
-      return q;
-    }
-    return null;
+    return s.interview?.question || null;
   }
+
   const answerFor = (s, q) => (s.talk.photoQ ? D.photoAnswers[s.demo ? s.id : s.type] : q.answer);
 
   function setTopic(s, id, status, title) {
@@ -220,7 +211,7 @@
 
     const contHTML = cont ? `
       <section class="continue" aria-labelledby="contTitle">
-        <div class="continue-media"><img src="${esc(cont.cover.src)}" width="${cont.cover.w}" height="${cont.cover.h}" alt="${esc(cont.cover.alt)}"></div>
+        <div class="continue-media">${cont.cover ? `<img src="${esc(cont.cover.src)}" width="${cont.cover.w}" height="${cont.cover.h}" alt="${esc(cont.cover.alt)}">` : `<div class="type-cover">${icon(typeOf(cont).icon)}</div>`}</div>
         <div class="continue-body">
           <p class="eyebrow">Продолжить разговор · ${esc(typeOf(cont).label)}</p>
           <h2 id="contTitle">${esc(cont.title)}</h2>
@@ -290,7 +281,7 @@
 
   /* ---------- разговор ---------- */
   const STEPS = ['Запись сохранена', 'Расшифровываем речь', 'Ищем людей, места и события', 'Подбираем следующий вопрос'];
-  const locked = (t) => t.rec !== 'idle' && t.rec !== 'typing';
+  const locked = (t) => !!t.pendingAnswer || (t.rec !== 'idle' && t.rec !== 'typing');
 
   function talkHTML(s) {
     const t = s.talk;
@@ -359,14 +350,14 @@
   function questionHTML(s, q) {
     const t = s.talk;
     const topic = q.topic ? s.topics.find((x) => x.id === q.topic) : null;
-    const label = t.photoQ ? 'Вопрос по фото' : (topic ? topic.title : (q.topicTitle || ''));
-    const photo = t.photoQ && t.photo ? `<figure class="q-photo"><img class="od-media" src="${esc(t.photo.src)}" width="${t.photo.w}" height="${t.photo.h}" alt="Фото, которое вы прикрепили к разговору"><figcaption><span>Прикреплённое фото</span><button class="link-btn" type="button" data-action="remove-photo"${locked(t) ? ' disabled' : ''}>Убрать</button></figcaption></figure>` : '';
+    const label = t.photo ? 'Фото к ответу' : (topic ? topic.title : (q.topicTitle || ''));
+    const photo = t.photo ? `<figure class="q-photo"><img class="od-media" src="${esc(t.photo.src)}" width="${t.photo.w}" height="${t.photo.h}" alt="Фото, которое вы прикрепили к разговору"><figcaption><span>Прикреплённое фото</span><button class="link-btn" type="button" data-action="remove-photo"${locked(t) ? ' disabled' : ''}>Убрать</button></figcaption></figure>` : '';
     return `<section class="qcard${S.qEnter ? ' is-entering' : ''}" aria-labelledby="qText">
       <div class="q-meta">${agentDot}<span>Вопрос ${t.turns.length + 1}</span><span aria-hidden="true">·</span><span>${esc(label)}</span></div>
       <h2 class="q-text" id="qText" tabindex="-1">${esc(q.text)}</h2>
       ${q.why ? `<p class="q-why">${icon('i-info', 'ico-sm')}<span>Почему спрашиваю: ${esc(q.why)}</span></p>` : ''}
       ${photo}
-      <div class="q-tools"><button class="btn btn-secondary btn-sm" type="button" data-action="speak" aria-pressed="false">${icon('i-volume')}<span>Прослушать вопрос</span></button></div>
+      ${t.photo?.analysis ? photoAnalysisHTML(t.photo.analysis) : ''}
       <div class="recorder" id="recorder" tabindex="-1">${recorderHTML(s)}</div>
     </section>`;
   }
@@ -375,8 +366,8 @@
     const any = s.talk.turns.some((x) => x.src);
     return `<section class="qcard" aria-labelledby="qText">
       <div class="q-meta">${agentDot}<span>Агент</span></div>
-      <h2 class="q-text" id="qText" tabindex="-1">На сегодня вопросов больше нет</h2>
-      <p class="help">${any ? 'Соберите главу из ответов этой сессии — или прикрепите фото, и агент спросит о нём.' : 'Прикрепите фото, и агент спросит о нём, — или вернитесь к разговору позже.'}</p>
+      <h2 class="q-text" id="qText" tabindex="-1">Получаем следующий вопрос</h2>
+      <button class="btn btn-secondary" data-action="question-retry" type="button">Получить вопрос</button>
     </section>`;
   }
 
@@ -390,62 +381,71 @@
 
   function recorderHTML(s) {
     const t = s.talk;
+    if (['starting', 'stopping', 'saving', 'skipping', 'uploading', 'loading'].includes(t.rec)) {
+      const labels = {starting: 'Разрешите доступ к микрофону…', stopping: 'Завершаем расшифровку и сохраняем запись…',
+        saving: 'Сохраняем ответ, ищем людей и готовим следующий вопрос…', skipping: 'Готовим другой вопрос…',
+        uploading: 'Загружаем и рассматриваем фотографию…', loading: 'Получаем вопрос…'};
+      return `<p class="help" role="status" aria-live="polite">${esc(labels[t.rec])}</p>`;
+    }
     if (t.rec === 'recording') {
       return `<div class="rec-row">
           <button class="rec-btn is-recording" type="button" data-action="rec-stop" aria-label="Остановить запись">${icon('i-stop')}</button>
           <div class="od-field" style="--od-gap:6px"><span class="live-dot">Идёт запись</span><span class="timer" id="recTimer">0:00</span></div>
           <div class="levels" id="levels" aria-hidden="true">${'<i></i>'.repeat(28)}</div>
         </div>
+        <div class="field" style="margin-top:16px">
+          <p class="help" id="liveStatus" role="status">${esc(t.liveStatus || 'Текст появляется по мере речи. Последние слова могут уточняться.')}</p>
+          <p id="liveTranscript" style="white-space:pre-wrap;min-height:3em">${esc(t.liveText || 'Говорите — здесь появится расшифровка…')}</p>
+        </div>
         <div class="rec-foot"><button class="btn btn-ghost btn-sm" type="button" data-action="rec-cancel">${icon('i-x')}<span>Отменить запись</span></button></div>`;
     }
     if (t.rec === 'processing') {
-      const steps = STEPS.slice();
-      steps[0] = `${STEPS[0]} · ${fmtTime(t.dur)}`;
-      return stepsHTML(steps, t.step, 'Обработка ответа');
+      return `<p class="help" role="status">${t.audio ? 'Повторно расшифровываем сохранённую запись…' : 'Передаём запись и расшифровываем речь…'}</p>`;
     }
     if (t.rec === 'error') {
       return `<div class="alert" role="alert">${icon('i-alert')}
         <div class="od-stack" style="--od-gap:4px">
           <strong>Не получилось расшифровать запись</strong>
-          <span>Запись сохранена (${fmtTime(t.dur)}) — ничего не потерялось. Попробуйте расшифровать ещё раз или запишите ответ заново.</span>
+          <span>${esc(t.error || 'Попробуйте снова.')} ${t.audio ? 'Исходная запись сохранена на сервере.' : t.localSaved ? 'Запись сохранена на этом устройстве.' : 'Запись доступна в этой вкладке; не закрывайте её.'}</span>
           <div class="od-cluster" style="margin-top:8px">
             <button class="btn btn-primary btn-sm" type="button" data-action="rec-retry">${icon('i-refresh')}<span>Повторить расшифровку</span></button>
-            <button class="btn btn-secondary btn-sm" type="button" data-action="rec-again">Записать заново</button>
+            <button class="btn btn-secondary btn-sm" type="button" data-action="rec-again"${t.pendingAnswer ? ' disabled' : ''}>Записать заново</button>
           </div>
         </div>
       </div>`;
     }
     if (t.rec === 'review') {
       return `<div class="od-stack" style="--od-gap:16px">
+        ${t.saveError ? `<p class="err" role="alert">${esc(t.saveError)}</p>` : ''}
         <div class="player">${voiceBtn('draft', fmtTime(t.dur), 'Прослушать ответ')}</div>
         <div class="field" style="margin:0">
           <label for="draft">Расшифровка</label>
           <p class="help" id="draftHelp">Проверьте текст и исправьте, если что-то распознано неверно. Запись останется в исходном виде.</p>
-          <textarea class="input" id="draft" rows="5" aria-describedby="draftHelp">${esc(t.draft)}</textarea>
+          <textarea class="input" id="draft" rows="5"${t.pendingAnswer ? ' readonly' : ''} aria-describedby="draftHelp">${esc(t.draft)}</textarea>
         </div>
         <div class="od-cluster">
           <button class="btn btn-primary" type="button" data-action="save-answer">${icon('i-check')}<span>Сохранить ответ</span></button>
-          <button class="btn btn-ghost" type="button" data-action="rec-again">Записать заново</button>
+          <button class="btn btn-ghost" type="button" data-action="rec-again"${t.pendingAnswer ? ' disabled' : ''}>Записать заново</button>
         </div>
       </div>`;
     }
     if (t.rec === 'typing') {
-      return `<div class="field" style="margin:0">
+      return `${t.saveError ? `<p class="err" role="alert">${esc(t.saveError)}</p>` : ''}<div class="field" style="margin:0">
           <label for="typed">Ваш ответ</label>
           <p class="help" id="typedHelp">Напишите так, как рассказали бы вслух.</p>
-          <textarea class="input" id="typed" rows="5" aria-describedby="typedHelp typedErr"></textarea>
+          <textarea class="input" id="typed" rows="5"${t.pendingAnswer ? ' readonly' : ''} aria-describedby="typedHelp typedErr">${esc(t.typedDraft || '')}</textarea>
           <p class="err" id="typedErr" hidden>${icon('i-alert', 'ico-sm')}<span>Напишите хотя бы пару слов — или вернитесь к записи голосом.</span></p>
         </div>
         <div class="od-cluster">
           <button class="btn btn-primary" type="button" data-action="save-typed">${icon('i-check')}<span>Сохранить ответ</span></button>
-          <button class="btn btn-ghost" type="button" data-action="rec-idle">${icon('i-mic')}<span>Ответить голосом</span></button>
+          <button class="btn btn-ghost" type="button" data-action="rec-idle"${t.pendingAnswer ? ' disabled' : ''}>${icon('i-mic')}<span>Ответить голосом</span></button>
         </div>`;
     }
     return `<div class="rec-row">
         <button class="rec-btn" type="button" data-action="rec-start" aria-label="Записать ответ">${icon('i-mic')}</button>
-        <div class="rec-text"><strong>Нажмите и расскажите</strong><span>Говорите сколько хочется — запись сохраняется сразу.</span></div>
+        <div class="rec-text"><strong>Нажмите и расскажите</strong><span>До 5 минут за один ответ. Текст появляется во время речи; после остановки его можно исправить.</span></div>
       </div>
-      <div class="rec-foot"><button class="btn btn-ghost btn-sm" type="button" data-action="rec-type">${icon('i-text')}<span>Ответить текстом</span></button></div>`;
+      <div class="rec-foot"><button class="btn btn-ghost btn-sm" type="button" data-action="rec-type">${icon('i-text')}<span>Ответить текстом</span></button><button class="btn btn-ghost btn-sm" type="button" data-action="audio-upload">${icon('i-upload')}<span>Загрузить аудио</span></button><input id="audioUpload" type="file" accept="audio/*" hidden></div>`;
   }
 
   function entRow(kind, e, s) {
@@ -833,38 +833,45 @@
     if (go) go.focus({ preventScroll: true });
   }
 
-  /* ---------- имитация воспроизведения записи ---------- */
-  const V = { btn: null, raf: 0, start: 0, total: 0 };
+  /* ---------- воспроизведение оригинальной записи ---------- */
+  const V = {btn: null, audio: null};
   function stopVoice() {
-    cancelAnimationFrame(V.raf);
-    const b = V.btn;
-    if (b) {
-      b.setAttribute('aria-pressed', 'false');
-      const pp = $('.pp', b); if (pp) pp.innerHTML = icon('i-play', 'ico-sm');
-      const bar = $('.voice-track i', b); if (bar) bar.style.transform = 'scaleX(0)';
-      const d = $('.v-dur', b); if (d) d.textContent = b.dataset.dur;
+    if (V.audio) { V.audio.pause(); V.audio.onended = V.audio.onerror = null; }
+    if (V.btn) {
+      V.btn.setAttribute('aria-pressed', 'false');
+      const pp = $('.pp', V.btn); if (pp) pp.innerHTML = icon('i-play', 'ico-sm');
+      const bar = $('.voice-track i', V.btn); if (bar) bar.style.transform = 'scaleX(0)';
+      const d = $('.v-dur', V.btn); if (d) d.textContent = V.btn.dataset.dur;
     }
-    V.btn = null;
+    V.btn = V.audio = null;
   }
   function toggleVoice(btn) {
     if (V.btn === btn) { stopVoice(); return; }
-    stopVoice();
-    stopSpeak();
-    V.btn = btn;
-    V.total = Math.max(1, parseDur(btn.dataset.dur));
-    V.start = performance.now();
+    stopVoice(); stopSpeak();
+    const key = btn.dataset.key;
+    let url;
+    if (key === 'draft') {
+      const t = getStory(S.route.sid)?.talk;
+      url = t?.blobUrl || t?.audio;
+    } else if (key.startsWith('q-')) {
+      const cut = key.lastIndexOf('-');
+      const block = S.chapters[key.slice(2, cut)]?.blocks[Number(key.slice(cut + 1))];
+      url = S.sources[block?.src]?.audio;
+    } else { url = S.sources[key.replace(/^(turn|m|s)-/, '')]?.audio; }
+    if (!url) { toast('У этого ответа нет аудиофайла'); return; }
+    const audio = new Audio(url);
+    V.audio = audio; V.btn = btn;
     btn.setAttribute('aria-pressed', 'true');
     $('.pp', btn).innerHTML = icon('i-pause', 'ico-sm');
-    const bar = $('.voice-track i', btn);
-    const d = $('.v-dur', btn);
-    const loop = (now) => {
-      const p = Math.min(1, (now - V.start) / 1000 / V.total);
-      if (bar) bar.style.transform = `scaleX(${p.toFixed(3)})`;
-      if (d) d.textContent = `${fmtTime(p * V.total)} / ${btn.dataset.dur}`;
-      if (p >= 1) { stopVoice(); return; }
-      V.raf = requestAnimationFrame(loop);
+    audio.ontimeupdate = () => {
+      const duration = Number.isFinite(audio.duration) ? audio.duration : parseDur(btn.dataset.dur);
+      const bar = $('.voice-track i', btn); if (bar) bar.style.transform = `scaleX(${duration ? Math.min(1, audio.currentTime / duration) : 0})`;
+      const label = $('.v-dur', btn); if (label) label.textContent = `${fmtTime(audio.currentTime)} / ${fmtTime(duration)}`;
     };
-    V.raf = requestAnimationFrame(loop);
+    const failed = () => { if (V.audio === audio) { stopVoice(); toast('Не получилось воспроизвести запись'); } };
+    audio.onended = () => { if (V.audio === audio) stopVoice(); };
+    audio.onerror = failed;
+    audio.play().catch(failed);
   }
 
   /* ---------- озвучка вопроса ---------- */
@@ -875,28 +882,41 @@
     $('span', b).textContent = on ? 'Остановить озвучку' : 'Прослушать вопрос';
     $('use', b).setAttribute('href', on ? '#i-stop' : '#i-volume');
   }
+  let questionAudio = null;
+  let speechToken = 0;
   function stopSpeak() {
+    speechToken += 1;
+    if (questionAudio) { questionAudio.pause(); questionAudio.onerror = null; questionAudio = null; }
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     setSpeakBtn(false);
   }
   function speak() {
-    const synth = window.speechSynthesis;
-    if (!synth || typeof window.SpeechSynthesisUtterance === 'undefined') { toast('В этом браузере нет озвучки — вопрос можно прочитать'); return; }
-    if (synth.speaking) { stopSpeak(); return; }
-    const q = $('#qText');
-    if (!q) return;
-    stopVoice();
-    const u = new window.SpeechSynthesisUtterance(q.textContent);
-    u.lang = 'ru-RU';
-    u.rate = 0.95;
-    const voices = synth.getVoices();
-    const ru = voices.find((v) => /^ru/i.test(v.lang));
-    if (ru) u.voice = ru;
-    else if (voices.length) toast('Русского голоса в системе нет — читаю голосом по умолчанию');
-    u.onend = () => setSpeakBtn(false);
-    u.onerror = () => setSpeakBtn(false);
+    if (getStory(S.route.sid)?.talk.rec === 'recording') { toast('Сначала остановите запись'); return; }
+    if (questionAudio || window.speechSynthesis?.speaking) { stopSpeak(); return; }
+    const text = $('#qText')?.textContent;
+    if (!text) return;
+    stopVoice(); stopSpeak();
+    const token = speechToken;
+    let usedFallback = false;
+    const fallback = () => {
+      if (token !== speechToken || usedFallback) return;
+      usedFallback = true;
+      if (questionAudio) questionAudio.pause();
+      questionAudio = null;
+      const synth = window.speechSynthesis;
+      if (!synth || !window.SpeechSynthesisUtterance) { setSpeakBtn(false); toast('Озвучка недоступна — вопрос можно прочитать'); return; }
+      toast('Яндекс не озвучил вопрос — используем голос браузера');
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'ru-RU'; u.rate = 0.95;
+      const ru = synth.getVoices().find(v => /^ru/i.test(v.lang)); if (ru) u.voice = ru;
+      u.onend = u.onerror = () => { if (token === speechToken) setSpeakBtn(false); };
+      synth.speak(u);
+    };
+    questionAudio = new Audio(API.ttsUrl(text));
+    questionAudio.onerror = fallback;
+    questionAudio.onended = () => { if (token === speechToken) { questionAudio = null; setSpeakBtn(false); } };
     setSpeakBtn(true);
-    synth.speak(u);
+    questionAudio.play().catch(fallback);
   }
 
   /* ---------- запись и обработка ответа ---------- */
@@ -905,160 +925,174 @@
     clearInterval(S.timers.levels);
     clearTimeout(S.timers.proc);
   }
-  function startRec(s) {
-    stopSpeak();
-    stopVoice();
-    const t = s.talk;
-    t.rec = 'recording';
-    t.recStart = performance.now();
-    rerender('[data-action="rec-stop"]');
-    announce('Идёт запись. Нажмите «Остановить запись», когда закончите.');
-    S.timers.rec = setInterval(() => {
-      const el = $('#recTimer');
-      if (el) el.textContent = fmtTime((performance.now() - t.recStart) / 1000);
-    }, 250);
-    const tickLevels = () => $$('#levels i').forEach((b) => { b.style.transform = `scaleY(${(0.15 + Math.random() * 0.85).toFixed(2)})`; });
-    tickLevels();
-    S.timers.levels = setInterval(tickLevels, reduceMotion.matches ? 700 : 130);
+  function redrawTalk(s, focus) {
+    if (parseRoute().sid === s.id && parseRoute().view === 'talk') rerender(focus);
   }
-  function procTick(s) {
+  function mergeStory(s, incoming) {
+    Object.assign(s, incoming);
+    s.talk.session = incoming.interview?.session || s.talk.session;
+    s.talk.turns = clone(incoming.interview?.turns || []);
+  }
+  async function persistDraft(s) {
     const t = s.talk;
-    if (t.rec !== 'processing') return;
-    t.step += 1;
-    const q = currentQuestion(s);
-    if (t.step === 2 && q && q.failOnce && !t.failed && !t.photoQ) {
-      t.failed = true;
-      t.rec = 'error';
-      rerender('[data-action="rec-retry"]');
-      announce('Не получилось расшифровать запись. Запись сохранена.');
-      return;
+    try {
+      await PomnuVoice.draft('put', s.id, {session: t.session, blob: t.blob, audio: t.audio, dur: t.dur,
+        draft: t.draft, original: t.original, typedDraft: t.typedDraft, photo: t.photo,
+        saveKey: t.saveKey, pendingAnswer: t.pendingAnswer, mode: t.rec});
+      t.localSaved = true;
+    } catch (_) { t.localSaved = false; }
+  }
+  async function discardDraft(s) {
+    const t = s.talk;
+    if (t.blobUrl) URL.revokeObjectURL(t.blobUrl);
+    Object.assign(t, {blob: null, blobUrl: null, audio: null, draft: '', original: '', typedDraft: '',
+      saveKey: null, pendingAnswer: null, localSaved: false, saveError: '', error: ''});
+    try { await PomnuVoice.draft('delete', s.id); } catch (_) { toast('Не удалось удалить локальный черновик'); }
+  }
+  async function startRec(s) {
+    if (!D.server) { toast('Запустите Python-сервер по README'); return; }
+    if (locked(s.talk)) return;
+    stopSpeak(); stopVoice();
+    const t = s.talk;
+    t.liveText = ''; t.liveStatus = '';
+    t.rec = 'starting'; redrawTalk(s, '#recorder');
+    try {
+      await PomnuVoice.start(level => {
+        if (S.route.sid !== s.id) return;
+        $$('#levels i').forEach(b => { b.style.transform = `scaleY(${Math.max(0.08, level)})`; });
+      }, () => { if (t.rec === 'recording') { toast('Пять минут записаны — обрабатываем ответ'); stopRec(s); } }, error => {
+        clearRecTimers(); t.rec = 'idle'; redrawTalk(s); toast(error.message);
+      }, {
+        url: API.liveUrl(s.id),
+        onTranscript(message) {
+          t.liveText = [message.final, message.partial].filter(Boolean).join(' ');
+          if (parseRoute().sid === s.id && $('#liveTranscript')) $('#liveTranscript').textContent = t.liveText || 'Слушаю…';
+        },
+        onStatus(message) {
+          t.liveStatus = message;
+          if (parseRoute().sid === s.id && $('#liveStatus')) $('#liveStatus').textContent = message;
+        }
+      });
+      t.rec = 'recording'; t.recStart = performance.now();
+      if (parseRoute().sid !== s.id || parseRoute().view !== 'talk') { await cancelRec(s); return; }
+      redrawTalk(s, '[data-action="rec-stop"]');
+      S.timers.rec = setInterval(() => {
+        if (S.route.sid === s.id && $('#recTimer')) $('#recTimer').textContent = fmtTime((performance.now() - t.recStart) / 1000);
+      }, 250);
+      announce('Идёт запись. Нажмите «Остановить запись», когда закончите.');
+    } catch (e) {
+      t.rec = 'idle'; redrawTalk(s);
+      toast(e.name === 'NotAllowedError' ? 'Нет доступа к микрофону. Разрешите его в браузере или ответьте текстом.' : e.message);
     }
-    if (t.step >= STEPS.length) {
-      t.rec = 'review';
-      t.draft = q ? answerFor(s, q).text : '';
-      rerender('#draft');
+  }
+  async function cancelRec(s) {
+    clearRecTimers(); await PomnuVoice.cancel();
+    s.talk.rec = 'idle'; redrawTalk(s, '[data-action="rec-start"]');
+  }
+  async function procTick(s) {
+    const t = s.talk;
+    t.rec = 'processing'; t.error = ''; redrawTalk(s, '#recorder');
+    try {
+      const result = t.audio ? await API.retryTranscribe(s.id, t.audio) : await API.transcribe(s.id, t.blob);
+      t.audio = result.audio;
+      if (result.dur) t.dur = parseDur(result.dur);
+      t.original = result.text; t.draft = result.text; t.rec = 'review';
+      await persistDraft(s);
+      redrawTalk(s, '#draft'); announce('Расшифровка готова. Проверьте текст и сохраните ответ.');
+    } catch (e) {
+      if (e.data?.audio) t.audio = e.data.audio;
+      t.error = e.message || 'Проверьте соединение и попробуйте снова'; t.rec = 'error';
+      await persistDraft(s); redrawTalk(s, '[data-action="rec-retry"]');
+    }
+  }
+  async function acceptRecording(s, blob, duration, live = null) {
+    const t = s.talk;
+    if (t.blobUrl) URL.revokeObjectURL(t.blobUrl);
+    Object.assign(t, {blob, blobUrl: URL.createObjectURL(blob), audio: null, dur: duration,
+      original: '', draft: '', saveKey: null, pendingAnswer: null, saveError: ''});
+    await persistDraft(s);
+    if (!t.localSaved) toast('Не удалось сохранить черновик на устройстве. Не закрывайте вкладку до отправки.');
+    live = await live;
+    if (live?.text && live?.audio) {
+      t.audio = live.audio; t.original = live.text; t.draft = live.text; t.rec = 'review';
+      if (live.dur) t.dur = parseDur(live.dur);
+      await persistDraft(s); redrawTalk(s, '#draft');
       announce('Расшифровка готова. Проверьте текст и сохраните ответ.');
-      return;
-    }
-    rerender('#recorder');
-    S.timers.proc = setTimeout(() => procTick(s), 700);
+    } else await procTick(s);
   }
-  function stopRec(s) {
+  async function stopRec(s) {
     const t = s.talk;
-    clearRecTimers();
-    t.dur = Math.max(1, (performance.now() - t.recStart) / 1000);
-    t.rec = 'processing';
-    t.step = 1;
-    rerender('#recorder');
-    announce('Запись сохранена. Расшифровываем.');
-    S.timers.proc = setTimeout(() => procTick(s), 800);
+    if (t.rec !== 'recording') return;
+    clearRecTimers(); t.rec = 'stopping'; redrawTalk(s, '#recorder');
+    try { const {blob, duration, live} = await PomnuVoice.stop(); await acceptRecording(s, blob, duration, live); }
+    catch (e) { t.rec = 'idle'; redrawTalk(s); toast(e.message); }
   }
-  function retryRec(s) {
-    const t = s.talk;
-    t.rec = 'processing';
-    t.step = 1;
-    rerender('#recorder');
-    S.timers.proc = setTimeout(() => procTick(s), 800);
+  async function retryRec(s) {
+    if (s.talk.rec === 'error') await procTick(s);
   }
-
-  function saveAnswer(s, typedText) {
+  async function saveAnswer(s, typedText) {
     const t = s.talk;
-    const q = currentQuestion(s);
-    if (!q) return;
+    if (!['typing', 'review'].includes(t.rec)) return;
     const typed = typeof typedText === 'string';
-    const ans = typed ? { text: typedText } : (answerFor(s, q) || { text: '' });
-    const draft = $('#draft');
-    const text = typed ? typedText : ((draft && draft.value.trim()) || ans.text);
-    const added = { people: [], places: [], events: [] };
-    const srcPeople = new Set();
-    const srcPlaces = new Set();
-    if (!typed) {
-      const add = ans.add || {};
-      arr(add.people).forEach((p) => {
-        const id = rid(s, p.id);
-        if (!S.people[id]) {
-          S.people[id] = { story: s.id, name: p.name, full: p.name, role: p.role, stem: p.stem, aka: [], note: '', links: [] };
-          S.fresh.add(id);
-          added.people.push(id);
-        }
-        srcPeople.add(id);
-      });
-      arr(add.places).forEach((p) => {
-        const id = rid(s, p.id);
-        if (!S.places[id]) {
-          S.places[id] = { story: s.id, name: p.name, role: p.role, stem: p.stem, note: '' };
-          S.fresh.add(id);
-          added.places.push(id);
-        }
-        srcPlaces.add(id);
-      });
-      const refs = ans.refs || {};
-      arr(refs.people).forEach((id) => { const r = rid(s, id); if (S.people[r]) srcPeople.add(r); });
-      arr(refs.places).forEach((id) => { const r = rid(s, id); if (S.places[r]) srcPlaces.add(r); });
+    const text = (typed ? typedText : ($('#draft')?.value ?? t.draft)).trim();
+    if (!text) { toast('Ответ не может быть пустым'); return; }
+    const previous = t.rec;
+    t.draft = typed ? t.draft : text;
+    t.typedDraft = typed ? text : t.typedDraft;
+    // Повтор после неизвестного результата использует тот же снимок и ключ.
+    t.saveKey ||= crypto.randomUUID();
+    t.pendingAnswer ||= {text, typed, edited: !typed && text !== t.original,
+      audio: typed ? null : t.audio, dur: typed ? '0:00' : fmtTime(t.dur), photo: t.photo};
+    t.rec = 'saving'; stopSpeak(); stopVoice();
+    await persistDraft(s); redrawTalk(s, '#recorder');
+    try {
+      const result = await API.answer(s.id, t.pendingAnswer, t.saveKey);
+      S.sources[result.sourceId] = result.source;
+      Object.assign(S.people, result.added.people); Object.assign(S.places, result.added.places);
+      for (const ev of result.added.events) { if (!S.events.some(x => x.id === ev.id)) S.events.push(ev); }
+      Object.keys(result.added.people).forEach(id => S.fresh.add(id));
+      Object.keys(result.added.places).forEach(id => S.fresh.add(id));
+      mergeStory(s, result.story);
+      await discardDraft(s); t.photo = s.interview?.photo || null; t.photoQ = null; t.rec = 'idle';
+      S.qEnter = true; redrawTalk(s, '#qText');
+      const count = Object.keys(result.added.people).length + Object.keys(result.added.places).length + result.added.events.length;
+      toast(count ? `Ответ сохранён. Новых материалов: ${count}` : 'Ответ сохранён');
+    } catch (e) {
+      if (e.data?.sourceId) {
+        // Источник уже сохранён, но один из агентов не ответил: повторять ответ нельзя.
+        try {
+          const state = await API.state();
+          Object.assign(S.sources, state.sources); Object.assign(S.people, state.people); Object.assign(S.places, state.places);
+          S.events = state.events;
+          const updated = state.stories.find(x => x.id === s.id); if (updated) mergeStory(s, updated);
+          await discardDraft(s); t.photo = s.interview?.photo || null; t.rec = 'idle';
+          toast('Ответ сохранён, но обработка агентами не завершилась. Проверьте материалы перед продолжением.');
+          await loadQuestion(s, true);
+          return;
+        } catch (_) { /* Локальный черновик остаётся до успешной сверки. */ }
+      }
+      t.rec = previous;
+      t.saveError = e.data?.sourceId ? 'Ответ уже на сервере. Повторите для сверки состояния.' : 'Не удалось подтвердить сохранение. Повтор отправит тот же ответ без дубликата.';
+      redrawTalk(s, typed ? '#typed' : '#draft'); toast(t.saveError);
     }
-    const n = storySources(s.id).filter((x) => x.session === t.session).length + 1;
-    const srcId = `${s.id}-${t.session}-${n}`;
-    S.sources[srcId] = {
-      story: s.id, session: t.session, n, date: 'сегодня', q: q.text,
-      dur: typed ? '0:00' : fmtTime(t.dur), text, typed,
-      edited: !typed && text !== ans.text,
-      people: Array.from(srcPeople).filter((id) => !S.people[id].narrator),
-      places: Array.from(srcPlaces),
-      photo: t.photoQ ? t.photo : null
-    };
-    if (!typed) {
-      arr(ans.add && ans.add.events).forEach((e) => {
-        const id = rid(s, e.id);
-        if (S.events.some((x) => x.id === id)) return;
-        S.events.push(Object.assign({}, e, {
-          id, story: s.id,
-          people: arr(e.people).map((p) => rid(s, p)),
-          place: e.place ? rid(s, e.place) : null,
-          src: [srcId]
-        }));
-        S.fresh.add(id);
-        added.events.push(id);
-      });
-      arr(ans.clarify).forEach((c) => { if (!s.clarify.some((x) => x.id === c.id)) s.clarify.push(Object.assign(clone(c), { src: srcId })); });
-    }
-    t.turns.push({ q: q.text, src: srcId, topicTitle: t.photoQ ? 'Фото' : (q.topicTitle || '') });
-    if (t.photoQ) { t.photoQ = null; t.photo = null; }
-    else {
-      if (q.topic) setTopic(s, q.topic, 'done', q.topicTitle);
-      t.pos += 1;
-      t.failed = false;
-    }
-    t.rec = 'idle';
-    t.draft = '';
-    s.updated = 'только что';
-    s.noteStale = true;
-    activateNextTopic(s);
-    S.qEnter = true;
-    rerender('#qText', true);
-    const parts = [];
-    if (added.people.length) parts.push(`${added.people.length} ${plural(added.people.length, 'человек', 'человека', 'человек')}`);
-    if (added.places.length) parts.push(`${added.places.length} ${plural(added.places.length, 'место', 'места', 'мест')}`);
-    if (added.events.length) parts.push(`${added.events.length} ${plural(added.events.length, 'событие', 'события', 'событий')}`);
-    toast(parts.length ? `Ответ сохранён. Новое: ${parts.join(', ')}` : 'Ответ сохранён');
   }
-
-  function skipQuestion(s, declined) {
+  async function skipQuestion(s, declined) {
     const t = s.talk;
-    const q = currentQuestion(s);
-    if (!q) return;
-    stopSpeak();
-    t.turns.push({ q: q.text, skipped: !declined, declined });
-    if (t.photoQ) { t.photoQ = null; t.photo = null; }
-    else {
-      if (q.topic) setTopic(s, q.topic, declined ? 'declined' : 'later', q.topicTitle);
-      t.pos += 1;
-      t.failed = false;
-    }
-    t.rec = 'idle';
-    activateNextTopic(s);
-    S.qEnter = true;
-    rerender('#qText', true);
-    toast(declined ? 'Хорошо, к этой теме больше не вернусь' : 'Вопрос отложен — тема осталась в списке');
+    if (locked(t) || !currentQuestion(s)) return;
+    stopSpeak(); t.rec = 'skipping'; redrawTalk(s, '#recorder');
+    try {
+      const result = await API.skip(s.id, declined);
+      mergeStory(s, result.story); await discardDraft(s);
+      t.photo = s.interview?.photo || null; t.rec = 'idle'; S.qEnter = true; redrawTalk(s, '#qText');
+      toast(declined ? 'Хорошо, к этой теме больше не вернусь' : 'Вопрос отложен — тема осталась в списке');
+    } catch (e) { t.rec = 'idle'; redrawTalk(s); toast(e.message); }
+  }
+  async function loadQuestion(s, force = false) {
+    if (!D.server || s.talk.loadingQuestion || (!force && currentQuestion(s))) return;
+    s.talk.loadingQuestion = true;
+    try { const q = await API.question(s.id); s.interview ||= {}; s.interview.question = q; redrawTalk(s, '#qText'); }
+    catch (_) { toast('Не удалось получить вопрос. Нажмите «Получить вопрос» для повтора.'); }
+    finally { s.talk.loadingQuestion = false; }
   }
 
   function resolveClarify(s, id, v) {
@@ -1189,15 +1223,21 @@
     return out.replace(/\u0001(\d+)\u0002/g, (m, n) => ph[Number(n)]);
   }
 
-  function loadImage(file) {
-    return new Promise((resolve, reject) => {
-      if (!file || !/^image\//.test(file.type)) { reject(new Error('not an image')); return; }
-      const url = URL.createObjectURL(file);
+  function photoAnalysisHTML(analysis) {
+    if (analysis.status !== 'ready') return `<p class="help" role="status">${esc(analysis.message || 'Фото сохранено, анализ пока недоступен.')}</p>`;
+    return `<details class="help"><summary>Что заметил агент на фото</summary><p>${esc(analysis.observation?.summary || '')}</p><p>Если в описании есть ошибка, поправьте её в ответе.</p></details>`;
+  }
+
+  async function loadImage(file) {
+    if (!file || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Выберите JPEG, PNG или WebP');
+    if (file.size > 10 * 1024 * 1024) throw new Error('Фотография должна быть меньше 10 МБ');
+    const url = URL.createObjectURL(file);
+    try {
       const img = new Image();
-      img.onload = () => resolve({ src: url, w: img.naturalWidth, h: img.naturalHeight });
-      img.onerror = () => reject(new Error('broken image'));
-      img.src = url;
-    });
+      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error('Не удалось прочитать изображение')); img.src = url; });
+      const result = await API.upload(file);
+      return {...result, w: img.naturalWidth, h: img.naturalHeight};
+    } finally { URL.revokeObjectURL(url); }
   }
 
   /* ---------- создание истории ---------- */
@@ -1246,7 +1286,7 @@
     closePopover();
     if ($('#drawer').open) $('#drawer').close();
     $('#createForm').reset();
-    C.photo = null;
+    C.photo = null; C.uploading = false; C.uploadToken = (C.uploadToken || 0) + 1;
     $('#photoRow').innerHTML = pickPhotoBtn();
     setErr('narrator', '');
     setErr('about', '');
@@ -1263,29 +1303,16 @@
     const f = D.types[type] ? $('#f-narrator') : $('#typePicker input:checked');
     if (f) f.focus();
   }
-  function createStory() {
-    const type = selectedType();
+  async function createStory() {
     const narrator = $('#f-narrator').value.trim();
     const about = $('#f-about').value.trim();
     const relation = /^я$/i.test(narrator) ? 'я' : $('#f-relation').value;
-    const id = `n${Date.now().toString(36)}`;
-    const q0 = D.scripts[type][0];
-    const s = {
-      id, type,
-      title: about.charAt(0).toUpperCase() + about.slice(1),
-      narrator: relation === 'я' ? D.user.name : narrator,
-      relation, narratorId: null,
-      cover: C.photo ? { src: C.photo.src, w: C.photo.w, h: C.photo.h, alt: 'Фото, с которого начинается история' } : null,
-      sessions: [], updated: 'только что', chapters: [], continueNote: '',
-      topics: [{ id: q0.topic, title: q0.topicTitle, status: 'current' }],
-      clarify: [], demo: false, talk: newTalk(1)
-    };
-    if (C.photo) {
-      s.talk.photo = C.photo;
-      s.talk.photoQ = { text: D.types[type].photoQuestion, why: 'Вы начали с фото — с него и начнём.' };
-    }
+    const s = await API.createStory({type: selectedType(), title: about.charAt(0).toUpperCase() + about.slice(1),
+      about, narrator: relation === 'я' ? D.user.name : narrator, relation, cover: C.photo});
+    s.demo = false; s.talk = newTalk(s.interview?.session || 1);
+    s.talk.photo = s.interview?.photo || null;
     S.stories.unshift(s);
-    return id;
+    return s.id;
   }
 
   /* ---------- тосты и объявления ---------- */
@@ -1327,7 +1354,7 @@
     $('#drawerNav').innerHTML = navHTML(active);
     document.title = r.view === 'home' ? 'Помню — истории, рассказанные голосом' : `${getStory(r.sid).title} — Помню`;
     S.qEnter = false;
-    if (window.speechSynthesis && window.speechSynthesis.speaking) setSpeakBtn(true);
+    if (questionAudio || window.speechSynthesis?.speaking) setSpeakBtn(true);
   }
   function rerender(focusSel, reveal) {
     const y = window.scrollY;
@@ -1340,17 +1367,9 @@
     if (reveal) el.scrollIntoView({ block: 'center', behavior: reduceMotion.matches ? 'auto' : 'smooth' });
   }
   function navigate() {
-    // незаконченная запись не теряется: при уходе со страницы она сразу попадает на проверку
-    S.stories.forEach((s) => {
-      const t = s.talk;
-      if (t.rec === 'recording') t.dur = Math.max(1, (performance.now() - t.recStart) / 1000);
-      if (t.rec === 'recording' || t.rec === 'processing') {
-        const q = currentQuestion(s);
-        t.rec = q ? 'review' : 'idle';
-        t.draft = q ? answerFor(s, q).text : '';
-      }
+    S.stories.forEach(s => {
+      if (s.talk.rec === 'recording') stopRec(s);
     });
-    clearRecTimers();
     clearTimeout(S.timers.asm);
     stopSpeak();
     closePopover();
@@ -1366,6 +1385,8 @@
       if (page && !reduceMotion.matches) page.classList.add('is-entering');
     }
     S.first = false;
+    const current = getStory(S.route.sid);
+    if (current && S.route.view === 'talk') loadQuestion(current);
   }
 
   /* ---------- события ---------- */
@@ -1389,11 +1410,13 @@
 
       case 'rec-start': if (s) startRec(s); break;
       case 'rec-stop': if (s) stopRec(s); break;
-      case 'rec-cancel': if (s) { clearRecTimers(); t.rec = 'idle'; rerender('[data-action="rec-start"]'); toast('Запись отменена'); } break;
+      case 'rec-cancel': if (s) cancelRec(s); break;
       case 'rec-retry': if (s) retryRec(s); break;
-      case 'rec-again': if (s) { t.rec = 'idle'; t.draft = ''; rerender('[data-action="rec-start"]'); } break;
+      case 'rec-again': if (s && !t.pendingAnswer) { discardDraft(s).then(() => { t.rec = 'idle'; redrawTalk(s); }); } break;
+      case 'audio-upload': $('#audioUpload')?.click(); break;
+      case 'question-retry': if (s) loadQuestion(s, true); break;
       case 'rec-type': if (s) { t.rec = 'typing'; rerender('#typed'); } break;
-      case 'rec-idle': if (s) { t.rec = 'idle'; rerender('[data-action="rec-start"]'); } break;
+      case 'rec-idle': if (s && !t.pendingAnswer) { t.rec = 'idle'; rerender('[data-action="rec-start"]'); } break;
       case 'save-answer': if (s) saveAnswer(s); break;
       case 'save-typed': {
         if (!s) break;
@@ -1412,7 +1435,7 @@
       case 'skip': if (s) skipQuestion(s, false); break;
       case 'decline': if (s) skipQuestion(s, true); break;
       case 'attach': $('#photoInput').click(); break;
-      case 'remove-photo': if (s) { t.photo = null; t.photoQ = null; rerender('#qText'); toast('Фото убрано'); } break;
+      case 'remove-photo': if (s) { t.photo = null; t.photoQ = null; persistDraft(s); rerender('#qText'); toast('Фото убрано'); } break;
       case 'speak': speak(); break;
       case 'play': toggleVoice(el); break;
       case 'finish': if (s) openFinish(s); break;
@@ -1474,21 +1497,27 @@
     }
   });
 
-  document.addEventListener('change', (e) => {
+  document.addEventListener('change', async (e) => {
     const input = e.target;
-    if (input.id === 'photoInput') {
+    if (input.id === 'audioUpload') {
+      const story = getStory(S.route.sid); const file = input.files?.[0]; input.value = '';
+      if (!story || !file || locked(story.talk)) return;
+      if (file.size > 25 * 1024 * 1024) { toast('Аудиофайл должен быть меньше 25 МБ'); return; }
+      story.talk.rec = 'stopping'; redrawTalk(story);
+      await acceptRecording(story, file, 0);
+    } else if (input.id === 'photoInput') {
       const s = S.route.sid ? getStory(S.route.sid) : null;
       const file = input.files && input.files[0];
       input.value = '';
       if (!s || !file) return;
+      const previous = s.talk.rec; s.talk.rec = 'uploading'; redrawTalk(s);
       loadImage(file).then((ph) => {
         s.talk.photo = ph;
-        s.talk.photoQ = { text: typeOf(s).photoQuestion, why: 'Фото помогает вспомнить детали: кто рядом, что было до и после снимка.' };
-        s.talk.rec = 'idle';
+        s.talk.rec = previous; persistDraft(s);
         S.qEnter = true;
         rerender('#qText', true);
-        toast('Фото прикреплено — агент спросит о нём');
-      }).catch(() => toast('Не получилось открыть файл. Выберите изображение JPG или PNG.'));
+        toast(ph.analysis?.status === 'ready' ? 'Фото разобрано — учту детали в следующем вопросе' : (ph.analysis?.message || 'Фото прикреплено к следующему ответу'));
+      }).catch(e => { s.talk.rec = previous; redrawTalk(s); toast(e.message); });
     } else if (input.id === 'slotInput') {
       const file = input.files && input.files[0];
       input.value = '';
@@ -1506,10 +1535,13 @@
       const file = input.files && input.files[0];
       input.value = '';
       if (!file) return;
+      const uploadToken = C.uploadToken = (C.uploadToken || 0) + 1;
+      C.uploading = true; $('#createSubmit').disabled = true; $('#photoRow').innerHTML = '<p class="help" role="status">Загружаем и рассматриваем фото…</p>';
       loadImage(file).then((ph) => {
+        if (C.uploadToken !== uploadToken) return;
         C.photo = ph;
-        $('#photoRow').innerHTML = `<img class="file-thumb" src="${esc(ph.src)}" width="${ph.w}" height="${ph.h}" alt="Выбранное фото"><button class="btn btn-ghost btn-sm" type="button" data-action="clear-start-photo">Убрать фото</button>`;
-      }).catch(() => toast('Не получилось открыть файл. Выберите изображение JPG или PNG.'));
+        $('#photoRow').innerHTML = `<img class="file-thumb" src="${esc(ph.src)}" width="${ph.w}" height="${ph.h}" alt="Выбранное фото"><button class="btn btn-ghost btn-sm" type="button" data-action="clear-start-photo">Убрать фото</button>${photoAnalysisHTML(ph.analysis || {})}`;
+      }).catch(e => { if (C.uploadToken === uploadToken) $('#photoRow').innerHTML = pickPhotoBtn(); toast(e.message); }).finally(() => { if (C.uploadToken === uploadToken) { C.uploading = false; $('#createSubmit').disabled = false; } });
     }
   });
 
@@ -1519,6 +1551,11 @@
     f.addEventListener('input', () => { if (f.classList.contains('is-invalid')) validate(name); });
   });
   document.addEventListener('input', (e) => {
+    const story = getStory(S.route.sid);
+    if (story && ['draft', 'typed'].includes(e.target.id)) {
+      story.talk[e.target.id === 'draft' ? 'draft' : 'typedDraft'] = e.target.value;
+      persistDraft(story);
+    }
     if (e.target.id === 'typed' && e.target.value.trim()) {
       e.target.classList.remove('is-invalid');
       e.target.removeAttribute('aria-invalid');
@@ -1527,8 +1564,9 @@
     }
   });
 
-  $('#createForm').addEventListener('submit', (e) => {
+  $('#createForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (C.uploading || $('#createSubmit').disabled) return;
     if (C.step !== 2) { setStep(2); $('#f-narrator').focus(); return; }
     const labels = { narrator: 'Кто рассказывает', about: 'О чём хотите поговорить' };
     const errs = ['narrator', 'about'].map((n) => [n, validate(n)]).filter((x) => x[1]);
@@ -1544,12 +1582,13 @@
     btn.disabled = true;
     btn.setAttribute('aria-busy', 'true');
     $('span', btn).textContent = 'Создаём историю…';
-    setTimeout(() => {
-      const id = createStory();
+    try {
+      const id = await createStory();
       $('#createDialog').close();
       location.hash = `#/s/${id}/talk`;
       toast('История создана — первый вопрос уже ждёт');
-    }, 700);
+    } catch (e) { toast(`Не получилось создать историю: ${e.message}`); }
+    finally { btn.disabled = false; btn.removeAttribute('aria-busy'); $('span', btn).textContent = 'Начать разговор'; }
   });
 
   $$('dialog').forEach((d) => {
@@ -1575,5 +1614,25 @@
   window.addEventListener('hashchange', navigate);
   if (window.speechSynthesis && typeof window.speechSynthesis.getVoices === 'function') window.speechSynthesis.getVoices();
 
-  navigate();
+  window.addEventListener('beforeunload', e => {
+    if (S.stories.some(s => ['starting', 'recording', 'stopping', 'saving', 'processing'].includes(s.talk.rec))) {
+      e.preventDefault(); e.returnValue = '';
+    }
+  });
+  async function bootVoice() {
+    for (const story of S.stories) {
+      try {
+        const draft = await PomnuVoice.draft('get', story.id);
+        if (draft && draft.session === story.talk.session) {
+          Object.assign(story.talk, draft, {localSaved: true});
+          if (draft.blob) story.talk.blobUrl = URL.createObjectURL(draft.blob);
+          story.talk.rec = draft.pendingAnswer?.typed || draft.mode === 'typing' ? 'typing' : draft.draft ? 'review' : draft.typedDraft ? 'typing' : draft.blob || draft.audio ? 'error' : 'idle';
+          if (draft.pendingAnswer) story.talk.saveError = 'Сохранение ещё не подтверждено. Нажмите «Сохранить ответ»: повтор использует прежний текст и не создаст дубликат.';
+        }
+      } catch (_) { /* Блокировка IndexedDB не мешает открыть приложение. */ }
+    }
+    navigate();
+    if (D.server) API.health().then(h => { if (h.mock) toast('MOCK: запись настоящая, распознавание и агенты работают на тестовых ответах'); }).catch(() => {});
+  }
+  bootVoice();
 })();

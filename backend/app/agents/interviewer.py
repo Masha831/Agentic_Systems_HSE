@@ -12,7 +12,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from .. import config, llm, memory
+from .. import config, llm, memory, photo_analysis
 from ..models import InterviewerResult, Question, Topic
 from .base import Agent, dump
 
@@ -46,6 +46,7 @@ def build_interview_context(story: dict, event: str) -> dict:
         "declined_topics": [t["title"] for t in story.get("topics", []) if t["status"] == "declined"],
         "people": people,
         "places": places,
+        "photos": photo_analysis.interview_context(story),
         "recent_answers": memory.recent_answers(sid, 8),
         "asked_this_session": story["interview"].get("asked", []),
         "last_event": event,
