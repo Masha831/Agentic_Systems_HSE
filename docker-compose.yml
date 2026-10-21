@@ -1,0 +1,42 @@
+services:
+  app:
+    build: .
+    image: pomnu-app
+    # .env необязателен: без ключей приложение само включит MOCK
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DB_PATH: backend/data/pomnu.sqlite3
+      MEDIA_DIR: backend/data/media
+    volumes:
+      - pomnu-data:/app/backend/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    environment:
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:?Задайте BASIC_AUTH_USER в .env}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:?Задайте BASIC_AUTH_HASH в .env (одинарные кавычки!)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  # Публичный адрес без своего домена: docker compose --profile public up -d (или make public)
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["public"]
+    command: tunnel --no-autoupdate --url http://caddy:8080
+    depends_on:
+      - caddy
+    restart: unless-stopped
+
+volumes:
+  pomnu-data:
+    name: pomnu-data

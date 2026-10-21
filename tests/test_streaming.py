@@ -110,6 +110,14 @@ class StreamingHTTPTests(unittest.TestCase):
         with self.assertRaises(WebSocketDisconnect):
             with self.client.websocket_connect(f'/api/stories/{self.sid}/transcribe/live',headers={'origin':'https://other.example'}): pass
 
+    def test_allowed_origins_env_opens_extra_host_only(self):
+        headers = {'origin': 'https://pomnu.example'}
+        with patch.object(config, 'ALLOWED_ORIGINS', {'pomnu.example'}), \
+                self.client.websocket_connect(f'/api/stories/{self.sid}/transcribe/live', headers=headers) as ws:
+            self.assertEqual(ws.receive_json()['type'], 'error')  # прошёл проверку Origin, дальше MOCK
+        with patch.object(config, 'ALLOWED_ORIGINS', {'pomnu.example'}), self.assertRaises(WebSocketDisconnect):
+            with self.client.websocket_connect(f'/api/stories/{self.sid}/transcribe/live', headers={'origin': 'https://other.example'}): pass
+
     def test_oversized_or_odd_pcm_rejected(self):
         async def recognize(chunks,rate):
             async for _ in chunks:

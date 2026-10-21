@@ -79,7 +79,7 @@ async def recognize(chunks, sample_rate):
 async def handle(ws: WebSocket, sid: str):
     # Browsers must originate on this app; do not expose a cross-site paid API proxy.
     origin = urlsplit(ws.headers.get('origin', ''))
-    if origin.scheme not in {'http', 'https'} or origin.netloc != ws.headers.get('host'):
+    if origin.scheme not in {'http', 'https'} or (origin.netloc != ws.headers.get('host') and origin.netloc.lower() not in config.ALLOWED_ORIGINS):
         await ws.close(code=1008)
         return
     if not store.get('story', sid):

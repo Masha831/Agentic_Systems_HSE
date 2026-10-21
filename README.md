@@ -17,6 +17,23 @@ cp .env.example .env                                     # ключи Yandex AI 
 Для распознавания речи нужен `ffmpeg` (`sudo apt install ffmpeg` / `brew install ffmpeg`).
 Сбросить базу к демо-данным: удалить `backend/data/`.
 
+## Запуск в Docker
+
+Нужны Docker и Docker Compose. Внутри: приложение (один процесс uvicorn, ffmpeg в образе) и Caddy с паролем на весь сайт.
+
+```bash
+cp .env.example .env && chmod 600 .env   # заполнить YANDEX_API_KEY, YANDEX_FOLDER_ID, MOCK=0, BASIC_AUTH_USER, BASIC_AUTH_HASH
+docker run --rm caddy:2 caddy hash-password   # хэш пароля для BASIC_AUTH_HASH — в одинарных кавычках
+make deploy                                    # git pull + сборка + запуск; сайт на http://127.0.0.1:8080
+make public                                    # то же + публичный адрес через Cloudflare quick tunnel, URL печатается в консоль
+```
+
+- Данные (SQLite, записи, фото) лежат в томе `pomnu-data` и переживают `make deploy`. `make reset-db` удаляет том после подтверждения — база вернётся к демо-данным.
+- `make test` — автотесты внутри образа (`MOCK=1`, без платных вызовов), `make logs` — логи.
+- `.env` не попадает в образ и в git; ключи Яндекса читает только контейнер `app`, Caddy получает лишь логин и хэш пароля.
+- Не добавляйте `--workers` к uvicorn: защита от повторной отправки ответа (`answer_delivery`) рассчитана на один процесс.
+- Quick tunnel Cloudflare обрывает обычный HTTP-ответ примерно через 100 с, поэтому длинную запись (несколько минут) проверьте до демо. Запасной вариант — ngrok: `ngrok http 8080`. Если прокси подменяет заголовок Host, перечислите свой хост в `ALLOWED_ORIGINS`.
+
 ## Архитектура
 
 ```
