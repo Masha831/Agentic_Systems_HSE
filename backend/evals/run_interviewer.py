@@ -10,8 +10,8 @@ import os
 import sys
 from pathlib import Path
 
-os.environ["DB_PATH"] = "backend/data/eval.sqlite3"
-Path("backend/data/eval.sqlite3").unlink(missing_ok=True)
+os.environ.setdefault("DB_PATH", "backend/data/eval.sqlite3")
+Path(os.environ["DB_PATH"]).unlink(missing_ok=True)
 
 from backend.app import orchestrator, store  # noqa: E402
 

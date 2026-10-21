@@ -25,12 +25,16 @@ class Agent(Generic[T]):
     result: Type[T]
     temperature: float = 0.2
 
+    @property
+    def model(self) -> str:
+        return config.AGENT_MODELS.get(self.name, "")
+
     def build_prompt(self, ctx: dict) -> str:
         raise NotImplementedError
 
     async def call_llm(self, prompt: str, ctx: dict) -> T:
         """Один вызов LLM; агенты с инструментами переопределяют (см. Interviewer)."""
-        return await llm.structured(self.system, prompt, self.result, temperature=self.temperature)
+        return await llm.structured(self.system, prompt, self.result, temperature=self.temperature, model=self.model)
 
     def mock(self, ctx: dict) -> T:
         raise NotImplementedError
@@ -54,7 +58,7 @@ class Agent(Generic[T]):
         story = (ctx.get("story") or {}).get("id")
         store.put("trace", uuid.uuid4().hex[:12], {
             "story": story, "agent": self.name, "ms": int((time.time() - t0) * 1000),
-            "mock": config.MOCK, "prompt": prompt[:4000], "result": res.model_dump(),
+            "mock": config.MOCK, "model": self.model or config.YANDEX_MODEL, "prompt": prompt[:4000], "result": res.model_dump(),
             "tool_calls": ctx.get("tool_calls", []),
             "at": time.strftime("%H:%M:%S"),
         }, story=story)
