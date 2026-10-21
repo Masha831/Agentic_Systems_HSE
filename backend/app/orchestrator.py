@@ -133,7 +133,9 @@ async def answer(sid: str, text: str, typed: bool = False, edited: bool = False,
     n = sum(1 for x in store.list_("source", sid).values() if x["session"] == session) + 1
     src_id = f"{sid}-{session}-{n}"
     is_intro = q.get("topic") == "intro"
-    if not is_intro:
+    if is_intro:
+        photo = None  # фото относится к следующему вопросу, не к знакомству
+    else:
         pending_photo = s["interview"].pop("photo", None)
         if photo is None and not photo_provided:
             photo = pending_photo
