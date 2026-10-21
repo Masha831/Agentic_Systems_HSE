@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -47,6 +48,19 @@ def build_interview_context(story: dict, event: str) -> dict:
         "asked_this_session": story["interview"].get("asked", []),
         "last_event": event,
     }
+
+
+def tidy_question(q: str) -> str:
+    """Страховка поверх промпта: без анкетного зачина и ровно один вопрос."""
+    q = q.strip()
+    m = re.match(r"^(Расскажите|Скажите|Подскажите),?\s+пожалуйста,?\s+(?=(как|что|кто|где|когда|почему|зачем|как[а-я]+|чем|сколько)\b)", q, re.I)
+    if m:
+        q = q[m.end():]
+        q = q[0].upper() + q[1:]
+    else:
+        q = re.sub(r"^(Расскажите|Скажите),?\s+пожалуйста,?\s+", r"\1 ", q, flags=re.I)
+    first = re.split(r"(?<=\?)\s+", q)[0]
+    return first if first.endswith("?") else q
 
 
 class Interviewer(Agent[InterviewerResult]):
@@ -93,6 +107,7 @@ class Interviewer(Agent[InterviewerResult]):
         return InterviewerResult(question=Question(text="Что ещё вам хочется вспомнить об этом времени?", why="Сценарий закончился — свободный вопрос.", topic="free", topicTitle="Свободный рассказ"))
 
     def postprocess(self, res: InterviewerResult, ctx: dict) -> InterviewerResult:
+        res.question.text = tidy_question(res.question.text)
         s = ctx["story"]
         topics = res.topics or [Topic(**t) for t in s.get("topics", [])]
         # declined от пользователя не может перезаписать агент
