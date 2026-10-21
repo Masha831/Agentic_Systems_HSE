@@ -18,10 +18,11 @@ services:
   caddy:
     image: caddy:2
     environment:
-      BASIC_AUTH_USER: ${BASIC_AUTH_USER:?Задайте BASIC_AUTH_USER в .env}
-      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:?Задайте BASIC_AUTH_HASH в .env (одинарные кавычки!)}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:-}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:-}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # CADDYFILE=./Caddyfile.open в .env отключает пароль (по умолчанию пароль включён)
+      - ${CADDYFILE:-./Caddyfile}:/etc/caddy/Caddyfile:ro
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:

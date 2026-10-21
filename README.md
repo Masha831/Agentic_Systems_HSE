@@ -32,6 +32,7 @@ make public                                    # то же + публичный 
 - `make test` — автотесты внутри образа (`MOCK=1`, без платных вызовов), `make logs` — логи.
 - `.env` не попадает в образ и в git; ключи сервисов читает только контейнер `app`, Caddy получает лишь логин и хэш пароля.
 - Свой домен: в панели Cloudflare Zero Trust создайте туннель (Networks → Tunnels → Cloudflared), добавьте Public hostname → `HTTP` → `caddy:8080`, токен положите в `.env` как `TUNNEL_TOKEN`, имя домена — в `ALLOWED_ORIGINS`, затем `make domain`. Домен должен быть в Cloudflare DNS; IP-адрес машины для этого не нужен.
+- Без пароля: `CADDYFILE=./Caddyfile.open` в `.env` и `make deploy`. Платные API (LLM, голос) тогда доступны всем, у кого есть адрес, поэтому включайте это ненадолго.
 - Не добавляйте `--workers` к uvicorn: защита от повторной отправки ответа (`answer_delivery`) рассчитана на один процесс.
 - Quick tunnel Cloudflare обрывает обычный HTTP-ответ примерно через 100 с, поэтому длинную запись (несколько минут) проверьте до демо. Запасной вариант — ngrok: `ngrok http 8080`. Если прокси подменяет заголовок Host, перечислите свой хост в `ALLOWED_ORIGINS`.
 
