@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, orchestrator, speech, store, answer_delivery, speech_stream
+from . import config, orchestrator, speech, store, answer_delivery, speech_stream, photo_analysis
 
 logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Помню API")
@@ -150,9 +150,10 @@ async def answer(sid: str, body: Answer, idempotency_key: str | None = Header(de
     """Сохранить ответ → Архивист → Интервьюер. Возвращает новый Source, добавленное и следующий вопрос."""
     if not body.text.strip():
         raise HTTPException(400, "Ответ не может быть пустым")
+    payload = body.model_dump() | {"photo_provided": "photo" in body.model_fields_set}
     if idempotency_key:
-        return await answer_delivery.deliver(sid, body.model_dump(), idempotency_key)
-    return await _404(orchestrator.answer)(sid, **body.model_dump())
+        return await answer_delivery.deliver(sid, payload, idempotency_key)
+    return await _404(orchestrator.answer)(sid, **payload)
 
 
 @app.post("/api/stories/{sid}/skip")
@@ -210,7 +211,8 @@ async def upload(file: UploadFile = File(...)):
         raise HTTPException(400, "Нужно корректное изображение JPEG, PNG или WebP до 40 мегапикселей")
     name = f"{uuid.uuid4().hex}{ext}"
     (config.MEDIA_DIR / name).write_bytes(data)
-    return {"src": f"/media/{name}", "w": w, "h": h, "alt": ""}
+    photo = {"src": f"/media/{name}", "w": w, "h": h, "alt": ""}
+    return photo | {"analysis": await photo_analysis.analyze(photo)}
 
 
 @app.get("/api/tts")

@@ -358,6 +358,7 @@
       <h2 class="q-text" id="qText" tabindex="-1">${esc(q.text)}</h2>
       ${q.why ? `<p class="q-why">${icon('i-info', 'ico-sm')}<span>Почему спрашиваю: ${esc(q.why)}</span></p>` : ''}
       ${photo}
+      ${t.photo?.analysis ? photoAnalysisHTML(t.photo.analysis) : ''}
       <div class="recorder" id="recorder" tabindex="-1">${recorderHTML(s)}</div>
     </section>`;
   }
@@ -384,7 +385,7 @@
     if (['starting', 'stopping', 'saving', 'skipping', 'uploading', 'loading'].includes(t.rec)) {
       const labels = {starting: 'Разрешите доступ к микрофону…', stopping: 'Завершаем расшифровку и сохраняем запись…',
         saving: 'Сохраняем ответ, ищем людей и готовим следующий вопрос…', skipping: 'Готовим другой вопрос…',
-        uploading: 'Загружаем фотографию…', loading: 'Получаем вопрос…'};
+        uploading: 'Загружаем и рассматриваем фотографию…', loading: 'Получаем вопрос…'};
       return `<p class="help" role="status" aria-live="polite">${esc(labels[t.rec])}</p>`;
     }
     if (t.rec === 'recording') {
@@ -1268,6 +1269,11 @@
     return out.replace(/\u0001(\d+)\u0002/g, (m, n) => ph[Number(n)]);
   }
 
+  function photoAnalysisHTML(analysis) {
+    if (analysis.status !== 'ready') return `<p class="help" role="status">${esc(analysis.message || 'Фото сохранено, анализ пока недоступен.')}</p>`;
+    return `<details class="help"><summary>Что заметил агент на фото</summary><p>${esc(analysis.observation?.summary || '')}</p><p>Если в описании есть ошибка, поправьте её в ответе.</p></details>`;
+  }
+
   async function loadImage(file) {
     if (!file || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Выберите JPEG, PNG или WebP');
     if (file.size > 10 * 1024 * 1024) throw new Error('Фотография должна быть меньше 10 МБ');
@@ -1557,7 +1563,7 @@
         s.talk.rec = previous; persistDraft(s);
         S.qEnter = true;
         rerender('#qText', true);
-        toast('Фото прикреплено к следующему ответу');
+        toast(ph.analysis?.status === 'ready' ? 'Фото разобрано — учту детали в следующем вопросе' : (ph.analysis?.message || 'Фото прикреплено к следующему ответу'));
       }).catch(e => { s.talk.rec = previous; redrawTalk(s); toast(e.message); });
     } else if (input.id === 'slotInput') {
       const file = input.files && input.files[0];
@@ -1577,12 +1583,12 @@
       input.value = '';
       if (!file) return;
       const uploadToken = C.uploadToken = (C.uploadToken || 0) + 1;
-      C.uploading = true; $('#createSubmit').disabled = true;
+      C.uploading = true; $('#createSubmit').disabled = true; $('#photoRow').innerHTML = '<p class="help" role="status">Загружаем и рассматриваем фото…</p>';
       loadImage(file).then((ph) => {
         if (C.uploadToken !== uploadToken) return;
         C.photo = ph;
-        $('#photoRow').innerHTML = `<img class="file-thumb" src="${esc(ph.src)}" width="${ph.w}" height="${ph.h}" alt="Выбранное фото"><button class="btn btn-ghost btn-sm" type="button" data-action="clear-start-photo">Убрать фото</button>`;
-      }).catch(e => toast(e.message)).finally(() => { if (C.uploadToken === uploadToken) { C.uploading = false; $('#createSubmit').disabled = false; } });
+        $('#photoRow').innerHTML = `<img class="file-thumb" src="${esc(ph.src)}" width="${ph.w}" height="${ph.h}" alt="Выбранное фото"><button class="btn btn-ghost btn-sm" type="button" data-action="clear-start-photo">Убрать фото</button>${photoAnalysisHTML(ph.analysis || {})}`;
+      }).catch(e => { if (C.uploadToken === uploadToken) $('#photoRow').innerHTML = pickPhotoBtn(); toast(e.message); }).finally(() => { if (C.uploadToken === uploadToken) { C.uploading = false; $('#createSubmit').disabled = false; } });
     }
   });
 

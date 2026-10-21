@@ -748,14 +748,14 @@ select.input { appearance: none; padding-right: 40px; background-image: url("dat
 <input class="visually-hidden" id="slotInput" type="file" accept="image/*" tabindex="-1" aria-hidden="true">
 
 <script src="assets/data.js"></script>
-<script src="assets/api.js?v=live-2"></script>
+<script src="assets/api.js?v=photo-1"></script>
 <script src="assets/live-voice.js?v=live-2"></script>
 <script src="assets/voice.js?v=live-2"></script>
 <script>
 /* Загрузчик: состояние берём с сервера (/api/state) поверх демо-данных data.js, затем запускаем app.js.
    Если сервер недоступен (страница открыта файлом) — работает чистый прототип на data.js. */
 (function () {
-  function boot() { var sc = document.createElement('script'); sc.src = 'assets/app.js?v=live-2'; document.body.appendChild(sc); }
+  function boot() { var sc = document.createElement('script'); sc.src = 'assets/app.js?v=photo-1'; document.body.appendChild(sc); }
   if (location.protocol === 'file:') return boot();
   API.state().then(function (st) {
     ['user', 'types', 'stories', 'people', 'places', 'events', 'sources', 'chapters'].forEach(function (k) { if (st[k]) window.POMNU[k] = st[k]; });
