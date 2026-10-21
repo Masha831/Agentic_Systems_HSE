@@ -933,7 +933,7 @@
     try {
       await PomnuVoice.draft('put', s.id, {session: t.session, blob: t.blob, audio: t.audio, dur: t.dur,
         draft: t.draft, original: t.original, typedDraft: t.typedDraft, photo: t.photo,
-        saveKey: t.saveKey, pendingAnswer: t.pendingAnswer});
+        saveKey: t.saveKey, pendingAnswer: t.pendingAnswer, mode: t.rec});
       t.localSaved = true;
     } catch (_) { t.localSaved = false; }
   }
@@ -1599,7 +1599,8 @@
         if (draft && draft.session === story.talk.session) {
           Object.assign(story.talk, draft, {localSaved: true});
           if (draft.blob) story.talk.blobUrl = URL.createObjectURL(draft.blob);
-          story.talk.rec = draft.draft ? 'review' : draft.typedDraft ? 'typing' : draft.blob || draft.audio ? 'error' : 'idle';
+          story.talk.rec = draft.pendingAnswer?.typed || draft.mode === 'typing' ? 'typing' : draft.draft ? 'review' : draft.typedDraft ? 'typing' : draft.blob || draft.audio ? 'error' : 'idle';
+          if (draft.pendingAnswer) story.talk.saveError = 'Сохранение ещё не подтверждено. Нажмите «Сохранить ответ»: повтор использует прежний текст и не создаст дубликат.';
         }
       } catch (_) { /* Блокировка IndexedDB не мешает открыть приложение. */ }
     }

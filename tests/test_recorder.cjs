@@ -3,11 +3,11 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 function setup(deny=false) {
-  let stopped=0;
+  let stopped=0, instance;
   const stream={getTracks:()=>[{stop(){stopped++;}}]};
   class Recorder {
     static isTypeSupported(type) { return type.startsWith('audio/webm'); }
-    constructor(s, options) { this.mimeType=options.mimeType; this.state='inactive'; }
+    constructor(s, options) { instance=this; this.mimeType=options.mimeType; this.state='inactive'; }
     start() { this.state='recording'; }
     stop() { this.state='inactive'; this.ondataavailable({data:new Blob(['audio'])}); this.onstop(); }
   }
@@ -15,7 +15,7 @@ function setup(deny=false) {
     navigator:{mediaDevices:{getUserMedia:async()=>{if(deny) throw Object.assign(new Error('denied'),{name:'NotAllowedError'}); return stream;}}},
     performance, setTimeout, clearTimeout, setInterval, clearInterval};
   vm.createContext(context); vm.runInContext(fs.readFileSync('frontend/assets/voice.js','utf8'),context);
-  return {api:context.window.PomnuVoice, stopped:()=>stopped};
+  return {api:context.window.PomnuVoice, stopped:()=>stopped, fail:()=>instance.onerror()};
 }
 test('recording returns actual blob, releases microphone, allows next recording',async()=>{
   const {api,stopped}=setup(); await api.start(()=>{},()=>{});
@@ -27,4 +27,11 @@ test('permission denial leaves recorder ready for another attempt',async()=>{
   const {api}=setup(true);
   await assert.rejects(api.start(()=>{},()=>{}),/denied/);
   await assert.rejects(api.start(()=>{},()=>{}),/denied/);
+});
+
+test('recorder error releases microphone and reports failure to UI',async()=>{
+  const {api,stopped,fail}=setup(); let error;
+  await api.start(()=>{},()=>{}, e=>{error=e;}); fail();
+  assert.match(error.message,/не смог записать/); assert.equal(stopped(),1);
+  await api.start(()=>{},()=>{}); await api.cancel(); assert.equal(stopped(),2);
 });
