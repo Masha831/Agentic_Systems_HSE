@@ -26,7 +26,11 @@ async def main():
     s = await orchestrator.create_story({"type": "family", "title": "Как бабушка переехала в Ленинград",
                                          "narrator": "Анна Сергеевна", "relation": "бабушка"})
     sid = s["id"]
-    print("Q0:", s["interview"]["question"]["text"])
+    print("Знакомство:", s["interview"]["question"]["text"])
+    r = await orchestrator.answer(sid, "Анна Сергеевна меня зовут. Я родилась в Вологде.")
+    st = store.get("story", sid)
+    print(f"   → имя={st['narratorName']!r}, обращение={st['narratorAddress']!r}, род={st['narratorGender']!r}")
+    print("Q0:", r["question"]["text"])
     for i, a in enumerate(ANSWERS, 1):
         r = await orchestrator.answer(sid, a)
         print(f"A{i}: {a}\n   + люди: {[p['name'] for p in r['added']['people'].values()]}  места: {[p['name'] for p in r['added']['places'].values()]}")
