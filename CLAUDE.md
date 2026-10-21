@@ -15,7 +15,7 @@
   Все запросы — через `frontend/assets/api.js`. Мутации: вызвать API → положить ответ в `S` → `rerender(...)`.
 - Backend — FastAPI. Агенты наследуют `agents/base.py::Agent`: `build_prompt` → `llm.structured` (JSON по pydantic-схеме)
   → `postprocess` (починка id/ссылок) → запись в trace. У каждого агента есть `mock()`.
-- LLM — Yandex AI Studio через OpenAI SDK (`llm.py`), модель `gpt://<folder>/<YANDEX_MODEL>`.
+- LLM — OpenAI SDK (`llm.py`), провайдер `LLM_PROVIDER`: `openrouter` (по умолчанию при `OPENROUTER_API_KEY`, модель `LLM_MODEL`, DeepSeek V4.1 Flash) или `yandex` (`gpt://<folder>/<YANDEX_MODEL>`).
 - Интервьюер: инструкции — `agents/prompts/interviewer.md`, контекст — `build_interview_context()`,
   агентный цикл с инструментами памяти — `Interviewer.call_llm` (до 3 вызовов памяти, потом вопрос).
 - Память — `backend/app/memory.py`: агенты обращаются к архиву только через неё

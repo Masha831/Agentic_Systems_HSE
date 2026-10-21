@@ -16,7 +16,6 @@ import time
 import weakref
 from typing import Annotated
 
-from openai import AsyncOpenAI
 from PIL import Image, ImageOps
 from pydantic import BaseModel, Field
 
@@ -73,10 +72,12 @@ def _jpeg(src: str) -> bytes:
 
 
 async def describe(jpeg: bytes) -> Observation:
-    async with AsyncOpenAI(api_key=config.YANDEX_API_KEY, project=config.YANDEX_FOLDER_ID,
-                           base_url=config.YANDEX_VISION_BASE_URL, timeout=TIMEOUT, max_retries=0) as client:
+    openrouter = config.VISION_PROVIDER == "openrouter"
+    # reasoning_effort="none" — параметр Yandex; OpenRouter получает reasoning через extra_body.
+    extra = {"extra_body": {"reasoning": {"effort": "none"}}} if openrouter else {"reasoning_effort": "none"}
+    async with llm.make_client(config.VISION_PROVIDER, config.VISION_BASE_URL, timeout=TIMEOUT, max_retries=0) as client:
         result = await client.chat.completions.create(
-            model=llm.model_uri(config.VISION_MODEL), temperature=0.1, max_tokens=1800, reasoning_effort="none",
+            model=llm.model_uri(config.VISION_MODEL, config.VISION_PROVIDER), temperature=0.1, max_tokens=1800, **extra,
             messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": [
                 {"type": "text", "text": "Опиши видимое на этом фото для дальнейших вопросов рассказчику."},
                 {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()}},
