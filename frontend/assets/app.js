@@ -327,6 +327,7 @@
       </details>` : '';
     return `<div class="session-bar">
       <div class="od-field"><span class="session-title">Сессия ${t.session} · сегодня</span><span class="help">${esc(sub)}</span></div>
+      ${D.server ? `<button class="btn btn-ghost btn-sm" type="button" data-action="trace">${icon('i-info')}<span>Журнал агентов</span></button>` : ''}
       <button class="btn btn-secondary btn-sm mat-jump" type="button" data-action="jump-materials">${icon('i-users')}<span>${pend ? `Материалы · уточнить ${pend}` : 'Материалы'}</span></button>
       ${past}
     </div>`;
@@ -520,7 +521,7 @@
         <blockquote><p>«${esc(b.text)}»</p></blockquote>
         <figcaption>
           <span class="pull-by"><span class="pull-name">${esc(p ? p.name : s.narrator)}</span>${b.byNote ? `<span class="pull-note">${esc(b.byNote)}</span>` : ''}</span>
-          ${voiceBtn(`q-${ch.id}-${i}`, b.dur, 'Слушать запись')}
+          ${S.sources[b.src]?.typed ? '' : voiceBtn(`q-${ch.id}-${i}`, b.dur, 'Слушать запись')}
           ${srcChip(b.src, b.text)}
         </figcaption>
       </figure>`;
@@ -1165,25 +1166,70 @@
     $('#confirmDialog').showModal();
     moveToasts();
   }
-  function runAssemble(s) {
+  async function runAssemble(s) {
     const steps = ['Собираем текст из ответов', 'Связываем людей, места и события', 'Добавляем ссылки на исходные записи'];
     let k = 0;
     $('#confirmInner .modal-foot').innerHTML = `<button class="btn btn-primary" type="button" disabled aria-busy="true"><span>Собираем главу…</span></button>`;
     const draw = () => { $('#confirmBody').innerHTML = stepsHTML(steps, k, 'Сборка главы'); };
     draw();
-    const tick = () => {
-      k += 1;
-      if (k >= steps.length) {
-        const id = assemble(s);
-        $('#confirmDialog').close();
-        location.hash = `#/s/${s.id}/chapter/${id}`;
-        toast('Глава собрана');
-        return;
-      }
-      draw();
-      S.timers.asm = setTimeout(tick, 650);
+    const done = (id) => {
+      clearTimeout(S.timers.asm);
+      $('#confirmDialog').close();
+      location.hash = `#/s/${s.id}/chapter/${id}`;
+      toast('Глава собрана');
     };
-    S.timers.asm = setTimeout(tick, 650);
+    if (!D.server) { // чистый прототип без бэкенда
+      const tick = () => { k += 1; if (k >= steps.length) { done(assemble(s)); return; } draw(); S.timers.asm = setTimeout(tick, 650); };
+      S.timers.asm = setTimeout(tick, 650);
+      return;
+    }
+    // Редактор работает несколько секунд: шаги идут, последний ждёт ответа сервера
+    const tick = () => { if (k < steps.length - 1) { k += 1; draw(); S.timers.asm = setTimeout(tick, 1500); } };
+    S.timers.asm = setTimeout(tick, 1500);
+    try {
+      const result = await API.assemble(s.id);
+      S.chapters[result.chapterId] = Object.assign(result.chapter, { fresh: true });
+      s.talk = newTalk(result.story.interview?.session || s.talk.session + 1);
+      mergeStory(s, result.story);
+      done(result.chapterId);
+    } catch (e) {
+      clearTimeout(S.timers.asm);
+      $('#confirmBody').innerHTML = `<p>Не получилось собрать главу: ${esc(e.message)}</p><p class="help" style="margin-top:12px">Ответы сохранены — можно попробовать ещё раз.</p>`;
+      $('#confirmInner .modal-foot').innerHTML = `<button class="btn btn-secondary" type="button" data-action="close-dialog">Закрыть</button><button class="btn btn-primary" type="button" data-action="assemble">Повторить</button>`;
+    }
+  }
+
+  /* ---------- журнал агентов ---------- */
+  const AGENT = { interviewer: 'Интервьюер', archivist: 'Архивист', editor: 'Редактор' };
+  const TOOL = { find_person: 'найти человека', get_person: 'карточка человека', list_events: 'хронология', open_topics: 'незаконченные темы' };
+  function traceSummary(t) {
+    const r = t.result || {};
+    if (t.agent === 'interviewer') return `Вопрос: «${r.question?.text || ''}»`;
+    if (t.agent === 'editor') return `Глава «${r.title || ''}» · ${(r.blocks || []).length} ${plural((r.blocks || []).length, 'блок', 'блока', 'блоков')}`;
+    const add = r.add || {};
+    const names = [...(add.people || []), ...(add.places || [])].map((x) => x.name);
+    const parts = [];
+    if (names.length) parts.push(`новое: ${names.join(', ')}`);
+    if ((add.events || []).length) parts.push(`событий: ${add.events.length}`);
+    if ((r.refs?.people || []).length + (r.refs?.places || []).length) parts.push(`узнал известных: ${(r.refs.people || []).length + (r.refs.places || []).length}`);
+    if ((r.links || []).length) parts.push(`связей: ${r.links.length}`);
+    if ((r.clarify || []).length) parts.push(`уточнить: ${r.clarify.length}`);
+    return parts.join(' · ') || 'Новых сведений нет';
+  }
+  function traceHTML(list) {
+    if (!list.length) return '<p class="help">Агенты по этой истории ещё не запускались.</p>';
+    return `<ol class="od-stack" style="--od-gap:16px;list-style:none;padding:0;margin:0">${list.slice().reverse().map((t) => `
+      <li class="od-stack" style="--od-gap:4px">
+        <p><strong>${esc(AGENT[t.agent] || t.agent)}</strong> <span class="help">· ${esc(t.at || '')} · ${(t.ms / 1000).toFixed(1)} с · ${esc(t.mock ? 'MOCK' : (t.model || ''))}</span></p>
+        ${(t.tool_calls || []).map((c) => `<p class="help">${icon('i-users', 'ico-sm')} память: ${esc(TOOL[c.tool] || c.tool)}(${esc(Object.values(c.args || {}).join(', '))}) → ${Array.isArray(c.result) ? `${c.result.length} ${plural(c.result.length, 'результат', 'результата', 'результатов')}` : (c.result ? 'найдено' : 'пусто')}</p>`).join('')}
+        <p>${esc(traceSummary(t))}</p>
+        <details><summary class="help">Ответ агента целиком</summary><pre style="white-space:pre-wrap;font-size:12px;max-height:240px;overflow:auto">${esc(JSON.stringify(t.result, null, 1))}</pre></details>
+      </li>`).join('')}</ol>`;
+  }
+  async function openTrace(s) {
+    openSheet('Журнал агентов', '<p class="help">Загружаем…</p>');
+    try { $('#sheetBody').innerHTML = traceHTML(await API.trace(s.id)); }
+    catch (e) { $('#sheetBody').innerHTML = `<p class="help">Не удалось загрузить журнал: ${esc(e.message)}</p>`; }
   }
 
   /* ---------- правка абзацев и фото в главе ---------- */
@@ -1413,6 +1459,7 @@
       case 'play': toggleVoice(el); break;
       case 'finish': if (s) openFinish(s); break;
       case 'assemble': if (s) runAssemble(s); break;
+      case 'trace': if (s) openTrace(s); break;
       case 'clarify': if (s) resolveClarify(s, el.dataset.id, el.dataset.v); break;
       case 'jump-materials': {
         const m = $('#materials');
