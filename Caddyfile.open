@@ -1,0 +1,16 @@
+# Без пароля: временный режим для демо. Включается переменной CADDYFILE=./Caddyfile.open в .env (docker-compose.yml).
+{
+	auto_https off
+	admin off
+}
+
+:8080 {
+	reverse_proxy app:8000 {
+		flush_interval -1
+		transport http {
+			dial_timeout 10s
+			read_timeout 360s
+			write_timeout 360s
+		}
+	}
+}
