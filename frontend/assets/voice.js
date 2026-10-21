@@ -3,13 +3,13 @@ window.PomnuVoice = (() => {
   let active = null;
   let opening = false;
   const MAX_SECONDS = 300;
-  async function start(onLevel, onLimit, onError = () => {}) {
+  async function start(onLevel, onLimit, onError = () => {}, liveOptions = null) {
     if (active || opening) throw new Error('Запись уже идёт');
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
       throw new Error('Микрофон доступен на localhost или HTTPS в браузере с поддержкой записи');
     }
     opening = true;
-    let stream;
+    let stream, state;
     try {
       stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}});
       const type = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4'].find(t => MediaRecorder.isTypeSupported(t));
@@ -19,7 +19,7 @@ window.PomnuVoice = (() => {
       const result = new Promise((yes, no) => { resolve = yes; reject = no; });
       // Ошибку выдаём при остановке; до этого promise не остаётся необработанным.
       result.catch(() => {});
-      const state = {stream, recorder, chunks, result, started: performance.now(), context: null, timer: null, limit: null};
+      state = {stream, recorder, chunks, result, started: performance.now(), context: null, timer: null, limit: null, live: null, liveResult: null};
       const release = () => {
         clearInterval(state.timer); clearTimeout(state.limit);
         stream.getTracks().forEach(track => track.stop());
@@ -29,15 +29,23 @@ window.PomnuVoice = (() => {
       recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
       recorder.onerror = () => {
         const error = new Error('Браузер не смог записать звук. Попробуйте снова.');
-        release(); reject(error); onError(error);
+        state.live?.cancel(); release(); reject(error); onError(error);
       };
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         const duration = (performance.now() - state.started) / 1000;
         const blob = new Blob(chunks, {type: recorder.mimeType || type || 'audio/webm'});
         release();
-        if (blob.size) resolve({blob, duration}); else reject(new Error('Запись пустая. Проверьте микрофон.'));
+        const live = state.liveResult;
+        if (blob.size) resolve({blob, duration, live}); else reject(new Error('Запись пустая. Проверьте микрофон.'));
       };
+      if (liveOptions && window.PomnuLive) {
+        try {
+          state.live = await window.PomnuLive.connect(stream, liveOptions.url, liveOptions.onTranscript, liveOptions.onStatus);
+        } catch (_) { liveOptions.onStatus('Живой текст недоступен. Расшифруем запись после остановки.'); }
+      }
+      state.started = performance.now();
       recorder.start(1000);
+      state.live?.begin();
       active = state;
       try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -54,6 +62,7 @@ window.PomnuVoice = (() => {
       } catch (_) { /* Уровни необязательны: запись продолжает работать. */ }
       state.limit = setTimeout(onLimit, MAX_SECONDS * 1000);
     } catch (error) {
+      state?.live?.cancel();
       if (!active && stream) stream.getTracks().forEach(track => track.stop());
       throw error;
     } finally { opening = false; }
@@ -61,10 +70,11 @@ window.PomnuVoice = (() => {
   async function stop() {
     const state = active;
     if (!state) throw new Error('Нет активной записи');
+    state.liveResult ||= state.live?.finish();
     if (state.recorder.state !== 'inactive') state.recorder.stop();
     return state.result;
   }
-  async function cancel() { if (active) { try { await stop(); } catch (_) {} } }
+  async function cancel() { if (active) { active.live?.cancel(); try { await stop(); } catch (_) {} } }
   // Сериализуем записи IndexedDB, чтобы старое input-событие не вернуло удалённый черновик.
   let queue = Promise.resolve();
   function draft(action, id, value) {

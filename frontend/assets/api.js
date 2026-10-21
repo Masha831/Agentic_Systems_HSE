@@ -14,6 +14,7 @@ window.API = (function () {
     return data;
   }
   return {
+    liveUrl: (sid) => `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/stories/${encodeURIComponent(sid)}/transcribe/live`,
     health: () => req('GET', '/api/health'),
     state: () => req('GET', '/api/state'),
     createStory: (s) => req('POST', '/api/stories', s),               // {type,title,about,narrator,relation,cover}

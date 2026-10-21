@@ -10,12 +10,12 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Header
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Header, WebSocket
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, orchestrator, speech, store, answer_delivery
+from . import config, orchestrator, speech, store, answer_delivery, speech_stream
 
 logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Помню API")
@@ -85,6 +85,11 @@ def delete_story(sid: str):
 @app.get("/api/stories/{sid}/question")
 async def question(sid: str):
     return await _404(orchestrator.get_question)(sid)
+
+
+@app.websocket("/api/stories/{sid}/transcribe/live")
+async def live_transcribe(ws: WebSocket, sid: str):
+    await speech_stream.handle(ws, sid)
 
 
 @app.post("/api/stories/{sid}/transcribe")

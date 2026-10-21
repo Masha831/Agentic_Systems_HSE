@@ -381,7 +381,7 @@
   function recorderHTML(s) {
     const t = s.talk;
     if (['starting', 'stopping', 'saving', 'skipping', 'uploading', 'loading'].includes(t.rec)) {
-      const labels = {starting: 'Разрешите доступ к микрофону…', stopping: 'Сохраняем запись на этом устройстве…',
+      const labels = {starting: 'Разрешите доступ к микрофону…', stopping: 'Завершаем расшифровку и сохраняем запись…',
         saving: 'Сохраняем ответ, ищем людей и готовим следующий вопрос…', skipping: 'Готовим другой вопрос…',
         uploading: 'Загружаем фотографию…', loading: 'Получаем вопрос…'};
       return `<p class="help" role="status" aria-live="polite">${esc(labels[t.rec])}</p>`;
@@ -391,6 +391,10 @@
           <button class="rec-btn is-recording" type="button" data-action="rec-stop" aria-label="Остановить запись">${icon('i-stop')}</button>
           <div class="od-field" style="--od-gap:6px"><span class="live-dot">Идёт запись</span><span class="timer" id="recTimer">0:00</span></div>
           <div class="levels" id="levels" aria-hidden="true">${'<i></i>'.repeat(28)}</div>
+        </div>
+        <div class="field" style="margin-top:16px">
+          <p class="help" id="liveStatus" role="status">${esc(t.liveStatus || 'Текст появляется по мере речи. Последние слова могут уточняться.')}</p>
+          <p id="liveTranscript" style="white-space:pre-wrap;min-height:3em">${esc(t.liveText || 'Говорите — здесь появится расшифровка…')}</p>
         </div>
         <div class="rec-foot"><button class="btn btn-ghost btn-sm" type="button" data-action="rec-cancel">${icon('i-x')}<span>Отменить запись</span></button></div>`;
     }
@@ -438,7 +442,7 @@
     }
     return `<div class="rec-row">
         <button class="rec-btn" type="button" data-action="rec-start" aria-label="Записать ответ">${icon('i-mic')}</button>
-        <div class="rec-text"><strong>Нажмите и расскажите</strong><span>До 5 минут за один ответ. После остановки запись сохраняется перед расшифровкой.</span></div>
+        <div class="rec-text"><strong>Нажмите и расскажите</strong><span>До 5 минут за один ответ. Текст появляется во время речи; после остановки его можно исправить.</span></div>
       </div>
       <div class="rec-foot"><button class="btn btn-ghost btn-sm" type="button" data-action="rec-type">${icon('i-text')}<span>Ответить текстом</span></button><button class="btn btn-ghost btn-sm" type="button" data-action="audio-upload">${icon('i-upload')}<span>Загрузить аудио</span></button><input id="audioUpload" type="file" accept="audio/*" hidden></div>`;
   }
@@ -949,6 +953,7 @@
     if (locked(s.talk)) return;
     stopSpeak(); stopVoice();
     const t = s.talk;
+    t.liveText = ''; t.liveStatus = '';
     t.rec = 'starting'; redrawTalk(s, '#recorder');
     try {
       await PomnuVoice.start(level => {
@@ -956,6 +961,16 @@
         $$('#levels i').forEach(b => { b.style.transform = `scaleY(${Math.max(0.08, level)})`; });
       }, () => { if (t.rec === 'recording') { toast('Пять минут записаны — обрабатываем ответ'); stopRec(s); } }, error => {
         clearRecTimers(); t.rec = 'idle'; redrawTalk(s); toast(error.message);
+      }, {
+        url: API.liveUrl(s.id),
+        onTranscript(message) {
+          t.liveText = [message.final, message.partial].filter(Boolean).join(' ');
+          if (parseRoute().sid === s.id && $('#liveTranscript')) $('#liveTranscript').textContent = t.liveText || 'Слушаю…';
+        },
+        onStatus(message) {
+          t.liveStatus = message;
+          if (parseRoute().sid === s.id && $('#liveStatus')) $('#liveStatus').textContent = message;
+        }
       });
       t.rec = 'recording'; t.recStart = performance.now();
       if (parseRoute().sid !== s.id || parseRoute().view !== 'talk') { await cancelRec(s); return; }
@@ -989,20 +1004,26 @@
       await persistDraft(s); redrawTalk(s, '[data-action="rec-retry"]');
     }
   }
-  async function acceptRecording(s, blob, duration) {
+  async function acceptRecording(s, blob, duration, live = null) {
     const t = s.talk;
     if (t.blobUrl) URL.revokeObjectURL(t.blobUrl);
     Object.assign(t, {blob, blobUrl: URL.createObjectURL(blob), audio: null, dur: duration,
       original: '', draft: '', saveKey: null, pendingAnswer: null, saveError: ''});
     await persistDraft(s);
     if (!t.localSaved) toast('Не удалось сохранить черновик на устройстве. Не закрывайте вкладку до отправки.');
-    await procTick(s);
+    live = await live;
+    if (live?.text && live?.audio) {
+      t.audio = live.audio; t.original = live.text; t.draft = live.text; t.rec = 'review';
+      if (live.dur) t.dur = parseDur(live.dur);
+      await persistDraft(s); redrawTalk(s, '#draft');
+      announce('Расшифровка готова. Проверьте текст и сохраните ответ.');
+    } else await procTick(s);
   }
   async function stopRec(s) {
     const t = s.talk;
     if (t.rec !== 'recording') return;
     clearRecTimers(); t.rec = 'stopping'; redrawTalk(s, '#recorder');
-    try { const {blob, duration} = await PomnuVoice.stop(); await acceptRecording(s, blob, duration); }
+    try { const {blob, duration, live} = await PomnuVoice.stop(); await acceptRecording(s, blob, duration, live); }
     catch (e) { t.rec = 'idle'; redrawTalk(s); toast(e.message); }
   }
   async function retryRec(s) {
