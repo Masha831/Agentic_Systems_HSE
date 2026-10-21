@@ -1,8 +1,31 @@
+# Secrets
 .env
-__pycache__/
-*.pyc
+.env.*
+!.env.example
+*.pem
+*.key
+# Python
 .venv/
-backend/data/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+# Local data and recordings
+data/
+uploads/
+recordings/
+*.sqlite*
+*.db
+*.wav
+*.mp3
+*.ogg
+*.webm
+*.log
+# Tooling
 .DS_Store
-.idea/
-.vscode/
+node_modules/
+dist/
