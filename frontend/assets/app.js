@@ -211,7 +211,7 @@
 
     const contHTML = cont ? `
       <section class="continue" aria-labelledby="contTitle">
-        <div class="continue-media"><img src="${esc(cont.cover.src)}" width="${cont.cover.w}" height="${cont.cover.h}" alt="${esc(cont.cover.alt)}"></div>
+        <div class="continue-media">${cont.cover ? `<img src="${esc(cont.cover.src)}" width="${cont.cover.w}" height="${cont.cover.h}" alt="${esc(cont.cover.alt)}">` : `<div class="type-cover">${icon(typeOf(cont).icon)}</div>`}</div>
         <div class="continue-body">
           <p class="eyebrow">Продолжить разговор · ${esc(typeOf(cont).label)}</p>
           <h2 id="contTitle">${esc(cont.title)}</h2>
