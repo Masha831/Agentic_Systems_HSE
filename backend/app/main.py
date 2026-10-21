@@ -4,19 +4,18 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
-import shutil
-import struct
 import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Header
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, orchestrator, speech, store
+from . import config, orchestrator, speech, store, answer_delivery
 
 logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Помню API")
@@ -91,32 +90,63 @@ async def question(sid: str):
 @app.post("/api/stories/{sid}/transcribe")
 async def transcribe(sid: str, audio: UploadFile = File(...)):
     """Аудио ответа → файл сохраняется ДО распознавания, затем SpeechKit. Ошибка распознавания не теряет запись."""
-    ext = Path(audio.filename or "a.webm").suffix or ".webm"
-    name = f"{sid}-{uuid.uuid4().hex[:8]}{ext}"
+    if not store.get("story", sid):
+        raise HTTPException(404, "История не найдена")
+    ext = Path(audio.filename or "a.webm").suffix.lower()
+    if ext not in {".webm", ".ogg", ".wav", ".mp3", ".m4a", ".mp4"}:
+        raise HTTPException(400, "Неподдерживаемый формат аудио")
+    name = f"{uuid.uuid4().hex}{ext}"
     path = config.MEDIA_DIR / name
-    with path.open("wb") as f:
-        shutil.copyfileobj(audio.file, f)
-    dur = speech.audio_duration(path)
+    size = 0
+    with path.open("wb") as output:
+        while chunk := await audio.read(1024 * 1024):
+            size += len(chunk)
+            if size > 25 * 1024 * 1024:
+                output.close(); path.unlink(missing_ok=True)
+                raise HTTPException(413, "Аудио должно быть меньше 25 МБ")
+            output.write(chunk)
+    if not size:
+        path.unlink(missing_ok=True)
+        raise HTTPException(400, "Аудиофайл пуст")
     url = f"/media/{name}"
+    store.put("audio", name, {"story": sid, "url": url})
+    return await _transcribe_saved(path, url)
+
+
+async def _transcribe_saved(path: Path, url: str):
     try:
+        dur = await asyncio.to_thread(speech.audio_duration, path)
+        if dur > 301:
+            raise ValueError("Один ответ должен быть не длиннее пяти минут")
+        if dur <= 0:
+            raise ValueError("Не удалось прочитать аудио. Проверьте файл и наличие ffmpeg/ffprobe на сервере")
         text = await speech.transcribe(path)
+        seconds = max(1, round(dur))
+        return {"text": text, "audio": url, "dur": f"{seconds // 60}:{seconds % 60:02d}"}
     except Exception as e:
-        logging.exception("STT failed")
-        raise HTTPException(502, detail={"message": f"Не получилось расшифровать: {e}", "audio": url})
-    return {"text": text, "audio": url, "dur": f"{int(dur // 60)}:{int(dur % 60):02d}"}
+        message = str(e) if isinstance(e, (ValueError, RuntimeError)) else "Сервис распознавания недоступен. Попробуйте повторить."
+        raise HTTPException(502, detail={"message": message, "audio": url})
 
 
 @app.post("/api/stories/{sid}/transcribe/retry")
 async def transcribe_retry(sid: str, audio: str = Form(...)):
-    path = config.MEDIA_DIR / Path(audio).name
+    name = Path(audio).name
+    meta = store.get("audio", name)
+    if not meta or meta.get("story") != sid or audio != meta.get("url"):
+        raise HTTPException(404, "Запись этой истории не найдена")
+    path = config.MEDIA_DIR / name
     if not path.exists():
         raise HTTPException(404, "Запись не найдена")
-    return {"text": await speech.transcribe(path), "audio": audio}
+    return await _transcribe_saved(path, audio)
 
 
 @app.post("/api/stories/{sid}/answers")
-async def answer(sid: str, body: Answer):
+async def answer(sid: str, body: Answer, idempotency_key: str | None = Header(default=None)):
     """Сохранить ответ → Архивист → Интервьюер. Возвращает новый Source, добавленное и следующий вопрос."""
+    if not body.text.strip():
+        raise HTTPException(400, "Ответ не может быть пустым")
+    if idempotency_key:
+        return await answer_delivery.deliver(sid, body.model_dump(), idempotency_key)
     return await _404(orchestrator.answer)(sid, **body.model_dump())
 
 
@@ -157,12 +187,24 @@ def patch(coll: str, id: str, body: dict):
 
 @app.post("/api/uploads")
 async def upload(file: UploadFile = File(...)):
-    ext = Path(file.filename or "f.jpg").suffix.lower() or ".jpg"
-    name = f"{uuid.uuid4().hex[:12]}{ext}"
-    path = config.MEDIA_DIR / name
-    data = await file.read()
-    path.write_bytes(data)
-    w, h = _image_size(data)
+    from io import BytesIO
+    from PIL import Image, UnidentifiedImageError
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Фото должно быть меньше 10 МБ")
+    try:
+        with Image.open(BytesIO(data)) as img:
+            if img.format not in {"JPEG", "PNG", "WEBP"}:
+                raise ValueError("format")
+            w, h = img.size
+            if w * h > 40_000_000:
+                raise ValueError("size")
+            ext = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}[img.format]
+            img.verify()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        raise HTTPException(400, "Нужно корректное изображение JPEG, PNG или WebP до 40 мегапикселей")
+    name = f"{uuid.uuid4().hex}{ext}"
+    (config.MEDIA_DIR / name).write_bytes(data)
     return {"src": f"/media/{name}", "w": w, "h": h, "alt": ""}
 
 
@@ -171,23 +213,8 @@ async def tts(text: str):
     try:
         return Response(await speech.synthesize(text), media_type="audio/mpeg")
     except Exception as e:
-        raise HTTPException(503, f"TTS недоступен: {e}")
+        raise HTTPException(503, "Озвучка Яндекса недоступна; можно использовать голос браузера")
 
-
-def _image_size(b: bytes) -> tuple[int, int]:
-    """Размер JPEG/PNG без Pillow."""
-    if b[:8] == b"\x89PNG\r\n\x1a\n":
-        return struct.unpack(">II", b[16:24])
-    i = 2
-    while i < len(b) - 9 and b[:2] == b"\xff\xd8":
-        if b[i] != 0xFF:
-            break
-        marker, size = b[i + 1], struct.unpack(">H", b[i + 2:i + 4])[0]
-        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
-            h, w = struct.unpack(">HH", b[i + 5:i + 9])
-            return w, h
-        i += 2 + size
-    return 0, 0
 
 
 app.mount("/media", StaticFiles(directory=config.MEDIA_DIR), name="media")

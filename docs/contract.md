@@ -10,16 +10,16 @@
 | POST | `/api/stories` | `{type, title, about, narrator, relation, cover?}` | `Story` (с `interview.question` — первым вопросом) |
 | DELETE | `/api/stories/{sid}` | | `{ok}` — удаляет историю и все материалы |
 | GET | `/api/stories/{sid}/question` | | `Question {text, why, topic, topicTitle}` — текущий или новый после перерыва |
-| POST | `/api/stories/{sid}/transcribe` | multipart `audio` (webm/ogg) | `{text, audio, dur}`; при ошибке `502 {detail:{message, audio}}` — запись сохранена |
-| POST | `/api/stories/{sid}/transcribe/retry` | form `audio=<url>` | `{text, audio}` |
+| POST | `/api/stories/{sid}/transcribe` | multipart `audio` (webm/ogg/wav/mp3/m4a/mp4, до 25 МБ и 5 минут) | `{text, audio, dur}`; при ошибке `502 {detail:{message, audio}}` — запись сохранена |
+| POST | `/api/stories/{sid}/transcribe/retry` | form `audio=<url>` | `{text, audio, dur}` |
 | POST | `/api/stories/{sid}/answers` | `{text, typed, edited, audio?, dur, photo?}` | `{sourceId, source, added:{people{}, places{}, events[]}, question, story}` |
 | POST | `/api/stories/{sid}/skip` | `{declined}` | `{question, story}` |
 | POST | `/api/stories/{sid}/clarify/{cid}` | `{value: "yes"\|"no"}` | `{story, people, places}` |
 | POST | `/api/stories/{sid}/chapters` | | `{chapterId, chapter, story}` — сессия закрывается, `story.interview.session += 1` |
 | GET | `/api/stories/{sid}/trace` | | журнал запусков агентов `[{agent, ms, prompt, result, at}]` |
 | PATCH | `/api/{people\|places\|chapters\|sources\|events\|stories}/{id}` | частичный объект | обновлённый объект |
-| POST | `/api/uploads` | multipart `file` | `{src, w, h, alt}` |
-| GET | `/api/tts?text=` | | `audio/mpeg`; 503 — фронт падает обратно на `speechSynthesis` |
+| POST | `/api/uploads` | multipart `file` (JPEG/PNG/WebP, до 10 МБ и 40 Мп) | `{src, w, h, alt}` |
+| GET | `/api/tts?text=` | | `audio/mpeg`; 503 — озвучка недоступна; кнопка временно скрыта в UI |
 
 ## Ключевые формы
 
@@ -30,3 +30,22 @@
 - `Chapter.blocks[]` — `StoryBlock {t: p|quote|fig|slot, src, text, by, dur, note, img, caption}`.
   В тексте — токены `[[p:id|слово]]` (человек) и `[[l:id|слово]]` (место).
 - id новых сущностей уникальны глобально (Архивист добавляет префикс истории при совпадении).
+
+## Повтор сохранения ответа
+
+Фронт передаёт `Idempotency-Key` в `POST /answers` и хранит ключ вместе с неизменным
+снимком ответа в IndexedDB. Повтор с тем же ключом возвращает тот же результат;
+другое тело с прежним ключом возвращает 409. После неизвестного результата запроса
+текст временно доступен только для чтения, чтобы повтор не отправил другие данные.
+
+Если Source уже записан, а один из агентов упал, ответ — 502 с
+`detail: {message, sourceId}`. Фронт перечитывает `/api/state`, не создавая ответ повторно.
+Последующий повтор такого ключа — 409 с `sourceId`. Это не означает, что материалы
+архивиста готовы: UI сообщает об ошибке и предлагает продолжить с новым вопросом.
+Защита рассчитана на один процесс сервера (без `--workers`). После аварийного
+завершения процесса запрос в состоянии pending требует ручной сверки; автоматически
+повторять работу агентов небезопасно.
+
+При ошибке STT сервер возвращает ссылку на сохранённый файл. `/transcribe/retry`
+принимает только точный URL записи, ранее загруженной для этой истории. Это проверка
+принадлежности записи истории, а не авторизация пользователей: демо остаётся однопользовательским.
