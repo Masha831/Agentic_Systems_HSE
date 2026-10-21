@@ -48,6 +48,36 @@ ALLOWED_ORIGINS = {h.strip().lower() for h in os.getenv("ALLOWED_ORIGINS", "").s
 LLM_HAS_KEY = bool(OPENROUTER_API_KEY) if _OR else bool(YANDEX_API_KEY and YANDEX_FOLDER_ID)
 MOCK = os.getenv("MOCK", "0") == "1" or not LLM_HAS_KEY
 
+# --- Голос: ElevenLabs (Scribe v2 + TTS) / Yandex SpeechKit (переключатель) -------------------
+# Документация: https://elevenlabs.io/docs/api-reference/speech-to-text/convert
+#               https://elevenlabs.io/docs/api-reference/text-to-speech/convert
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")  # TTS без голоса недоступен (UI берёт голос браузера)
+ELEVENLABS_STT_MODEL = os.getenv("ELEVENLABS_STT_MODEL", "scribe_v2")
+ELEVENLABS_TTS_MODEL = os.getenv("ELEVENLABS_TTS_MODEL", "eleven_multilingual_v2")
+
+
+def _voice_provider(name: str) -> str:
+    """elevenlabs|yandex; пусто или неизвестное → elevenlabs при ключе ElevenLabs, иначе yandex."""
+    name = os.getenv(name, "").strip().lower()
+    return name if name in ("elevenlabs", "yandex") else ("elevenlabs" if ELEVENLABS_API_KEY else "yandex")
+
+
+STT_PROVIDER = _voice_provider("STT_PROVIDER")
+TTS_PROVIDER = _voice_provider("TTS_PROVIDER")
+
+
+def _voice_mock(provider: str) -> bool:
+    """Заглушка речи: MOCK=1 или у выбранного провайдера нет ключа (независимо от ключей LLM)."""
+    if os.getenv("MOCK", "0") == "1":
+        return True
+    return not (ELEVENLABS_API_KEY if provider == "elevenlabs" else YANDEX_API_KEY and YANDEX_FOLDER_ID)
+
+
+STT_MOCK = _voice_mock(STT_PROVIDER)
+TTS_MOCK = _voice_mock(TTS_PROVIDER)
+# ----------------------------------------------------------------------------------------------
+
 DB_PATH = ROOT / os.getenv("DB_PATH", "backend/data/pomnu.sqlite3")
 MEDIA_DIR = ROOT / os.getenv("MEDIA_DIR", "backend/data/media")
 FRONTEND_DIR = ROOT / "frontend"

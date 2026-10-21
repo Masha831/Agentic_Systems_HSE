@@ -62,7 +62,9 @@ def _404(fn):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "mock": config.MOCK, "provider": config.LLM_PROVIDER, "model": config.LLM_MODEL}
+    # live_stt: живая расшифровка идёт только через Yandex SpeechKit v3 (speech_stream.handle).
+    live_stt = bool(config.YANDEX_API_KEY) and not config.MOCK
+    return {"ok": True, "mock": config.MOCK, "provider": config.LLM_PROVIDER, "model": config.LLM_MODEL, "live_stt": live_stt}
 
 
 @app.get("/api/state")
@@ -94,7 +96,7 @@ async def live_transcribe(ws: WebSocket, sid: str):
 
 @app.post("/api/stories/{sid}/transcribe")
 async def transcribe(sid: str, audio: UploadFile = File(...)):
-    """Аудио ответа → файл сохраняется ДО распознавания, затем SpeechKit. Ошибка распознавания не теряет запись."""
+    """Аудио ответа → файл сохраняется ДО распознавания, затем STT-провайдер (ElevenLabs/SpeechKit). Ошибка распознавания не теряет запись."""
     if not store.get("story", sid):
         raise HTTPException(404, "История не найдена")
     ext = Path(audio.filename or "a.webm").suffix.lower()
@@ -220,7 +222,7 @@ async def tts(text: str):
     try:
         return Response(await speech.synthesize(text), media_type="audio/mpeg")
     except Exception as e:
-        raise HTTPException(503, "Озвучка Яндекса недоступна; можно использовать голос браузера")
+        raise HTTPException(503, "Озвучка недоступна; можно использовать голос браузера")
 
 
 
