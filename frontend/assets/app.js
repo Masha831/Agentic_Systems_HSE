@@ -380,6 +380,7 @@
     }).join('')}</ol>`;
   }
 
+  let liveStt = true; // GET /api/health → live_stt: живой текст только при ключе Yandex SpeechKit v3
   function recorderHTML(s) {
     const t = s.talk;
     if (['starting', 'stopping', 'saving', 'skipping', 'uploading', 'loading'].includes(t.rec)) {
@@ -394,10 +395,10 @@
           <div class="od-field" style="--od-gap:6px"><span class="live-dot">Идёт запись</span><span class="timer" id="recTimer">0:00</span></div>
           <div class="levels" id="levels" aria-hidden="true">${'<i></i>'.repeat(28)}</div>
         </div>
-        <div class="field" style="margin-top:16px">
+        ${!liveStt ? `<div class="field" style="margin-top:16px"><p class="help" role="status">Текст появится после остановки записи.</p></div>` : `<div class="field" style="margin-top:16px">
           <p class="help" id="liveStatus" role="status">${esc(t.liveStatus || 'Текст появляется по мере речи. Последние слова могут уточняться.')}</p>
           <p id="liveTranscript" style="white-space:pre-wrap;min-height:3em">${esc(t.liveText || 'Говорите — здесь появится расшифровка…')}</p>
-        </div>
+        </div>`}
         <div class="rec-foot"><button class="btn btn-ghost btn-sm" type="button" data-action="rec-cancel">${icon('i-x')}<span>Отменить запись</span></button></div>`;
     }
     if (t.rec === 'processing') {
@@ -963,7 +964,7 @@
         $$('#levels i').forEach(b => { b.style.transform = `scaleY(${Math.max(0.08, level)})`; });
       }, () => { if (t.rec === 'recording') { toast('Пять минут записаны — обрабатываем ответ'); stopRec(s); } }, error => {
         clearRecTimers(); t.rec = 'idle'; redrawTalk(s); toast(error.message);
-      }, {
+      }, !liveStt ? null : {
         url: API.liveUrl(s.id),
         onTranscript(message) {
           t.liveText = [message.final, message.partial].filter(Boolean).join(' ');
@@ -1679,7 +1680,7 @@
       } catch (_) { /* Блокировка IndexedDB не мешает открыть приложение. */ }
     }
     navigate();
-    if (D.server) API.health().then(h => { if (h.mock) toast('MOCK: запись настоящая, распознавание и агенты работают на тестовых ответах'); }).catch(() => {});
+    if (D.server) API.health().then(h => { if (h.live_stt === false) liveStt = false; if (h.mock) toast('MOCK: запись настоящая, распознавание и агенты работают на тестовых ответах'); }).catch(() => {});
   }
   bootVoice();
 })();

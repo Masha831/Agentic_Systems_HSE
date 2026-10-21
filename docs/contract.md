@@ -5,12 +5,12 @@
 
 | Метод | Путь | Тело | Ответ |
 |---|---|---|---|
-| GET | `/api/health` | | `{ok, mock, provider, model}` |
+| GET | `/api/health` | | `{ok, mock, provider, model, live_stt}`; `live_stt` — доступен ли живой текст (Yandex SpeechKit v3: есть ключ и не MOCK), иначе UI не открывает WebSocket |
 | GET | `/api/state` | | весь `window.POMNU`: `{user, types, stories[], people{}, places{}, events[], sources{}, chapters{}}` |
 | POST | `/api/stories` | `{type, title, about, narrator, relation, cover?}` | `Story` (с `interview.question` — первым вопросом) |
 | DELETE | `/api/stories/{sid}` | | `{ok}` — удаляет историю и все материалы |
 | GET | `/api/stories/{sid}/question` | | `Question {text, why, topic, topicTitle}` — текущий или новый после перерыва |
-| POST | `/api/stories/{sid}/transcribe` | multipart `audio` (webm/ogg/wav/mp3/m4a/mp4, до 25 МБ и 5 минут) | `{text, audio, dur}`; при ошибке `502 {detail:{message, audio}}` — запись сохранена |
+| POST | `/api/stories/{sid}/transcribe` | multipart `audio` (webm/ogg/wav/mp3/m4a/mp4, до 25 МБ и 5 минут) | `{text, audio, dur}`; распознаёт `STT_PROVIDER` (ElevenLabs Scribe v2 или SpeechKit); при ошибке `502 {detail:{message, audio}}` — запись сохранена |
 | POST | `/api/stories/{sid}/transcribe/retry` | form `audio=<url>` | `{text, audio, dur}` |
 | POST | `/api/stories/{sid}/answers` | `{text, typed, edited, audio?, dur, photo?}` | `{sourceId, source, added:{people{}, places{}, events[]}, question, story}` |
 | POST | `/api/stories/{sid}/skip` | `{declined}` | `{question, story}` |
@@ -19,7 +19,7 @@
 | GET | `/api/stories/{sid}/trace` | | журнал запусков агентов `[{agent, ms, prompt, result, at}]` |
 | PATCH | `/api/{people\|places\|chapters\|sources\|events\|stories}/{id}` | частичный объект | обновлённый объект |
 | POST | `/api/uploads` | multipart `file` (JPEG/PNG/WebP, до 10 МБ и 40 Мп) | `{src, w, h, alt}` |
-| GET | `/api/tts?text=` | | `audio/mpeg`; 503 — озвучка недоступна; кнопка временно скрыта в UI |
+| GET | `/api/tts?text=` | | `audio/mpeg`; озвучивает `TTS_PROVIDER` (ElevenLabs или SpeechKit); 503 — озвучка недоступна (нет ключа/голоса, сбой провайдера); кнопка временно скрыта в UI |
 
 ## Ключевые формы
 
