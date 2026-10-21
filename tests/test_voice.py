@@ -107,6 +107,23 @@ class VoiceHTTPTests(unittest.TestCase):
 
 
 class SpeechProviderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_timeout_is_not_reported_as_bad_key_or_empty_speech(self):
+        client = AsyncMock(); client.__aenter__.return_value = client
+        client.post.side_effect = httpx.ReadTimeout('private transport diagnostics')
+        with patch.object(speech.config, 'MOCK', False), patch.object(speech.httpx, 'AsyncClient', return_value=client), patch.object(speech, '_to_ogg_chunks', return_value=[b'audio']):
+            with self.assertRaisesRegex(RuntimeError, 'не ответил вовремя') as caught:
+                await speech.transcribe(Path('fake'))
+        self.assertNotIn('private', str(caught.exception))
+
+    async def test_access_errors_have_safe_actionable_messages(self):
+        for status, expected in [(401, 'отклонил ключ'), (403, 'запретил запрос'), (429, 'лимит запросов')]:
+            response = httpx.Response(status, json={'detail': 'private provider diagnostics'}, request=httpx.Request('POST', speech.STT_URL))
+            client = AsyncMock(); client.__aenter__.return_value = client; client.post.return_value = response
+            with patch.object(speech.config, 'MOCK', False), patch.object(speech.httpx, 'AsyncClient', return_value=client), patch.object(speech, '_to_ogg_chunks', return_value=[b'audio']):
+                with self.assertRaisesRegex(RuntimeError, expected) as caught:
+                    await speech.transcribe(Path('fake'))
+            self.assertNotIn('private', str(caught.exception))
+
     async def test_service_account_stt_omits_folder_and_joins_chunks(self):
         response = httpx.Response(200, json={'result': 'слова'}, request=httpx.Request('POST', speech.STT_URL))
         client = AsyncMock(); client.__aenter__.return_value = client; client.post.return_value = response

@@ -84,12 +84,24 @@ async def transcribe(path: Path) -> str:
     parts = []
     async with httpx.AsyncClient(timeout=60) as c:
         for chunk in chunks:
-            r = await c.post(
-                STT_URL,
-                params={"lang": "ru-RU", "format": "oggopus"},
-                headers=_headers(), content=chunk,
-            )
-            r.raise_for_status()
+            try:
+                r = await c.post(
+                    STT_URL,
+                    params={"lang": "ru-RU", "format": "oggopus"},
+                    headers=_headers(), content=chunk,
+                )
+                r.raise_for_status()
+            except httpx.TimeoutException as e:
+                raise RuntimeError("SpeechKit не ответил вовремя. Запись сохранена; попробуйте распознать её позже.") from e
+            except httpx.HTTPStatusError as e:
+                messages = {
+                    401: "SpeechKit отклонил ключ. Проверьте YANDEX_API_KEY на сервере.",
+                    403: "SpeechKit запретил запрос. Проверьте права ключа, сервисного аккаунта и статус платёжного аккаунта.",
+                    429: "Достигнут лимит запросов SpeechKit. Подождите и повторите распознавание.",
+                }
+                raise RuntimeError(messages.get(e.response.status_code, "SpeechKit вернул ошибку. Запись сохранена; повторите распознавание позже.")) from e
+            except httpx.RequestError as e:
+                raise RuntimeError("Нет соединения с SpeechKit. Запись сохранена; проверьте сеть сервера и повторите.") from e
             parts.append(r.json().get("result", ""))
     text = " ".join(p for p in parts if p).strip()
     if not text:
