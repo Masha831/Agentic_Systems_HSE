@@ -257,7 +257,11 @@ class ProviderSelectionTests(unittest.TestCase):
     """Значения по умолчанию задаёт config при импорте — проверяем в чистом процессе."""
     def resolve(self, **env):
         import json, subprocess, sys
-        base = {k: v for k, v in os.environ.items() if not k.startswith(('ELEVENLABS_', 'STT_', 'TTS_', 'YANDEX_', 'MOCK'))}
+        # config.py сам подгружает .env из корня; пустое значение в окружении его перекрывает (load_dotenv не переопределяет),
+        # поэтому ключи и провайдеры обнуляем, а не удаляем — тест не должен зависеть от локального .env
+        base = {k: v for k, v in os.environ.items() if not k.startswith(('ELEVENLABS_', 'STT_', 'TTS_', 'YANDEX_', 'MOCK', 'OPENROUTER_', 'LLM_'))}
+        base |= {k: '' for k in ('ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID', 'STT_PROVIDER', 'TTS_PROVIDER',
+                                 'YANDEX_API_KEY', 'YANDEX_FOLDER_ID', 'OPENROUTER_API_KEY', 'LLM_PROVIDER', 'MOCK')}
         code = ("import json; from backend.app import config as c; "
                 "print(json.dumps([c.STT_PROVIDER, c.TTS_PROVIDER, c.STT_MOCK, c.TTS_MOCK, c.ELEVENLABS_STT_MODEL]))")
         root = Path(__file__).resolve().parents[1]
