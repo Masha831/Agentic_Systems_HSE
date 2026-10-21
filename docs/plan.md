@@ -14,7 +14,7 @@
 |---|---|---|---|
 | Issue | [#1](https://github.com/Masha831/Agentic_Systems_HSE/issues/1) | [#2](https://github.com/Masha831/Agentic_Systems_HSE/issues/2) | [#3](https://github.com/Masha831/Agentic_Systems_HSE/issues/3) |
 | Зона | Интервьюер, Редактор, оркестратор, ключи Яндекса | Экран разговора: голос, фото, создание истории | Архивист, память, экран «Люди и события», правки, деплой |
-| Файлы | `agents/interviewer.py`, `agents/editor.py`, `orchestrator.py`, `llm.py`; в `app.js` сборка главы и журнал агентов | `app.js` (разговор, мастер создания), `speech.py`, `api.js` | `agents/archivist.py`, `store.py`, `models.py`; в `app.js` карточки, правки, уточнения, плеер записей; `Dockerfile` |
+| Файлы | `agents/prompts/interviewer.md`, `agents/interviewer.py` (`build_interview_context`, цикл с памятью), `backend/evals/`, `agents/editor.py`, `orchestrator.py`, `llm.py`; в `app.js` сборка главы и журнал агентов | `app.js` (разговор, мастер создания), `speech.py`, `api.js` | `memory.py` (интерфейс памяти для агентов), `agents/archivist.py`, `store.py`, `models.py`; преза; в `app.js` карточки, правки, уточнения, плеер записей; `Dockerfile` |
 | Готово, когда | На реальной YandexGPT вопросы уместные, не повторяются, «не хочу» уважается; глава связная, без выдумок | 5 голосовых ходов подряд в браузере: вопрос озвучен, ответ записан, расшифрован, исправлен и сохранён; ошибка STT не теряет запись | Новые люди и связи корректны, повторное упоминание («Нинка», «сестра») не плодит дубли, два Михаила → вопрос на уточнение; приложение доступно по публичному URL |
 
 ## Расписание (T = старт)

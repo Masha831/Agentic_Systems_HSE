@@ -1,58 +1,81 @@
-"""Интервьюер — зона Маши. Выбирает следующий вопрос и ведёт план тем."""
+"""Интервьюер — зона Маши. Выбирает следующий вопрос и ведёт план тем.
+
+Инструкции — prompts/interviewer.md. Контекст разговора — build_interview_context().
+Во время размышления агент может обращаться к памяти (memory.TOOLS) — до MAX_TOOL_CALLS раз.
+"""
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from typing import Optional
 
-from .. import config
+from pydantic import BaseModel, Field
+
+from .. import config, llm, memory
 from ..models import InterviewerResult, Question, Topic
 from .base import Agent, dump
 
-SYSTEM = """Ты — бережный интервьюер, который помогает человеку рассказать его воспоминания.
-Ты получаешь контекст истории: о чём она, кто рассказывает, план тем, уже известных людей, места, события,
-все прошлые вопросы и ответы. Твоя задача — выбрать ОДИН следующий вопрос и обновить план тем.
+PROMPT = (Path(__file__).parent / "prompts" / "interviewer.md").read_text()
+MAX_TOOL_CALLS = 3
 
-Правила:
-- Спрашивай по одному. Вопрос короткий, тёплый, разговорный, на «вы».
-- Развивай конкретный эпизод, о котором человек только что рассказал, если в нём есть что раскрыть
-  (кто был рядом, что видел, что почувствовал, чем закончилось).
-- Не повторяй уже заданные вопросы и не спрашивай то, на что уже ответили.
-- «Не помню» и «не хочу обсуждать» принимай спокойно. Темы со статусом declined больше не поднимай.
-- Не подсказывай вымышленные детали и не задавай наводящих вопросов («Наверное, было холодно?» — нельзя).
-- Не допрашивай о точных датах: «примерно когда» достаточно.
-- Если человек упомянул нового человека или место мимоходом — это хороший повод для следующего вопроса.
-- Если пользователь вернулся к истории после перерыва, начни с незаконченной темы и напомни, на чём остановились.
 
-Статусы тем: done — рассказана, current — обсуждаем сейчас (ровно одна), later — на потом, declined — отказ.
-topics — ПОЛНЫЙ обновлённый список тем (старые с новыми статусами + новые). id тем — латиница, через дефис.
-question.topic — id текущей темы, question.topicTitle — её название, question.why — одна фраза,
-почему задаёшь этот вопрос (её видит пользователь).
-continueNote — одна фраза на случай, если разговор прервётся: что осталось нерассказанным."""
+class InterviewerStep(BaseModel):
+    """Один шаг агента: либо вызов памяти, либо итоговый ответ."""
+    tool: Optional[str] = Field(None, description="имя инструмента памяти, если нужны сведения; иначе null")
+    args: dict = Field(default_factory=dict)
+    final: Optional[InterviewerResult] = Field(None, description="итог, когда сведений достаточно")
+
+
+def build_interview_context(story: dict, event: str) -> dict:
+    """Подготовка к разговору: рассказчик, прошлые беседы, незавершённые темы, известные люди и места."""
+    from .. import store
+    sid = story["id"]
+    people = {id: {"name": p["name"], "role": p.get("role", "")} for id, p in store.list_("person", sid).items()}
+    places = {id: p["name"] for id, p in store.list_("place", sid).items()}
+    return {
+        "story": {"title": story["title"], "about": story.get("about") or story["title"], "type": story["type"]},
+        "narrator": {"name": story["narrator"], "relation": story.get("relation") or "рассказчик"},
+        "session": story["interview"]["session"],
+        "past_sessions": story.get("sessions", []),
+        "continue_note": story.get("continueNote", ""),
+        "topics": story.get("topics", []),
+        "open_topics": memory.open_topics(sid),
+        "declined_topics": [t["title"] for t in story.get("topics", []) if t["status"] == "declined"],
+        "people": people,
+        "places": places,
+        "recent_answers": memory.recent_answers(sid, 8),
+        "asked_this_session": story["interview"].get("asked", []),
+        "last_event": event,
+    }
 
 
 class Interviewer(Agent[InterviewerResult]):
     name = "interviewer"
-    system = SYSTEM
+    system = PROMPT
     result = InterviewerResult
     temperature = 0.5
 
     def build_prompt(self, ctx: dict) -> str:
-        s = ctx["story"]
-        people = {id: {"name": p["name"], "role": p.get("role", "")} for id, p in ctx["people"].items()}
-        places = {id: {"name": p["name"], "role": p.get("role", "")} for id, p in ctx["places"].items()}
-        history = [
-            {"session": x["session"], "q": x["q"], "a": x["text"]}
-            for x in sorted(ctx["sources"].values(), key=lambda x: (x["session"], x["n"]))
-        ]
-        return (
-            f"История: «{s['title']}». О чём: {s.get('about') or s['title']}. Тип: {s['type']}.\n"
-            f"Рассказывает: {s['narrator']} ({s.get('relation') or 'рассказчик'}).\n"
-            f"Сессия разговора №{s['interview']['session']}.\n\n"
-            f"План тем:\n{dump(s.get('topics', []))}\n\n"
-            f"Известные люди:\n{dump(people)}\n\nМеста:\n{dump(places)}\n\n"
-            f"Вопросы и ответы (по порядку):\n{dump(history[-15:])}\n\n"
-            f"Уже заданные вопросы в этой сессии:\n{dump(s['interview'].get('asked', []))}\n\n"
-            f"Последнее действие пользователя: {ctx.get('event', 'начало сессии')}"
-        )
+        c = build_interview_context(ctx["story"], ctx.get("event", "начало сессии"))
+        ctx["interview_context"] = c
+        return f"Контекст разговора:\n{dump(c)}"
+
+    async def call_llm(self, prompt: str, ctx: dict) -> InterviewerResult:
+        """Агентный цикл: модель может несколько раз спросить память, потом выдаёт вопрос."""
+        tools = "\n".join(f"- {d}" for d in memory.TOOLS.values())
+        system = f"{self.system}\n\nИнструменты памяти:\n{tools}\n\nНа каждом шаге верни либо tool+args, либо final."
+        transcript = prompt
+        ctx["tool_calls"] = []
+        for _ in range(MAX_TOOL_CALLS):
+            step = await llm.structured(system, transcript, InterviewerStep, temperature=self.temperature)
+            if step.final:
+                return step.final
+            if not step.tool:
+                break
+            out = memory.call(step.tool, step.args, ctx["story"]["id"])
+            ctx["tool_calls"].append({"tool": step.tool, "args": step.args, "result": out})
+            transcript += f"\n\nВызов {step.tool}({json.dumps(step.args, ensure_ascii=False)}) вернул:\n{dump(out)}"
+        return await llm.structured(self.system, transcript + "\n\nСведений достаточно — дай итог.", InterviewerResult, temperature=self.temperature)
 
     def mock(self, ctx: dict) -> InterviewerResult:
         """Без LLM — идём по сценарию из seed.json (scripts), как в прототипе."""

@@ -28,6 +28,10 @@ class Agent(Generic[T]):
     def build_prompt(self, ctx: dict) -> str:
         raise NotImplementedError
 
+    async def call_llm(self, prompt: str, ctx: dict) -> T:
+        """Один вызов LLM; агенты с инструментами переопределяют (см. Interviewer)."""
+        return await llm.structured(self.system, prompt, self.result, temperature=self.temperature)
+
     def mock(self, ctx: dict) -> T:
         raise NotImplementedError
 
@@ -42,7 +46,7 @@ class Agent(Generic[T]):
             res = self.mock(ctx)
         else:
             try:
-                res = await llm.structured(self.system, prompt, self.result, temperature=self.temperature)
+                res = await self.call_llm(prompt, ctx)
             except Exception as e:  # демо не должно падать из-за одного ответа LLM
                 log.exception("%s failed, fallback to mock: %s", self.name, e)
                 res = self.mock(ctx)
@@ -51,6 +55,7 @@ class Agent(Generic[T]):
         store.put("trace", uuid.uuid4().hex[:12], {
             "story": story, "agent": self.name, "ms": int((time.time() - t0) * 1000),
             "mock": config.MOCK, "prompt": prompt[:4000], "result": res.model_dump(),
+            "tool_calls": ctx.get("tool_calls", []),
             "at": time.strftime("%H:%M:%S"),
         }, story=story)
         return res

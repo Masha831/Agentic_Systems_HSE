@@ -16,6 +16,11 @@
 - Backend — FastAPI. Агенты наследуют `agents/base.py::Agent`: `build_prompt` → `llm.structured` (JSON по pydantic-схеме)
   → `postprocess` (починка id/ссылок) → запись в trace. У каждого агента есть `mock()`.
 - LLM — Yandex AI Studio через OpenAI SDK (`llm.py`), модель `gpt://<folder>/<YANDEX_MODEL>`.
+- Интервьюер: инструкции — `agents/prompts/interviewer.md`, контекст — `build_interview_context()`,
+  агентный цикл с инструментами памяти — `Interviewer.call_llm` (до 3 вызовов памяти, потом вопрос).
+- Память — `backend/app/memory.py`: агенты обращаются к архиву только через неё
+  (`find_person`, `get_person`, `list_events`, `open_topics`, `recent_answers`). Сигнатуры не менять, реализацию — можно.
+- Проверочные диалоги: `.venv/bin/python -m backend.evals.run_interviewer [case_id]`, кейсы — `backend/evals/interviewer_cases.json`.
 
 ## Правила
 - Не менять формы данных из `models.py` и `data.js` без согласования: на них сидят все трое.
