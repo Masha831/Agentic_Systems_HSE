@@ -32,16 +32,16 @@ def client() -> AsyncOpenAI:
     return _client
 
 
-def model_uri() -> str:
-    return f"gpt://{config.YANDEX_FOLDER_ID}/{config.YANDEX_MODEL}"
+def model_uri(model: str = "") -> str:
+    return f"gpt://{config.YANDEX_FOLDER_ID}/{model or config.YANDEX_MODEL}"
 
 
-async def chat(system: str, user: str, temperature: float = 0.3, max_tokens: int = 2000, json_mode: bool = False) -> str:
+async def chat(system: str, user: str, temperature: float = 0.3, max_tokens: int = 2000, json_mode: bool = False, model: str = "") -> str:
     kwargs = {}
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
     r = await client().chat.completions.create(
-        model=model_uri(),
+        model=model_uri(model),
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         temperature=temperature,
         max_tokens=max_tokens,
@@ -59,7 +59,7 @@ def _extract_json(text: str) -> str:
     return text[start:]
 
 
-async def structured(system: str, user: str, schema: Type[T], temperature: float = 0.2, retries: int = 2) -> T:
+async def structured(system: str, user: str, schema: Type[T], temperature: float = 0.2, retries: int = 2, model: str = "") -> T:
     """Вызов LLM с ответом строго по pydantic-схеме. При невалидном JSON — повтор с ошибкой в контексте."""
     sys = (
         f"{system}\n\nОтвечай ТОЛЬКО JSON-объектом по этой JSON Schema, без пояснений:\n"
@@ -68,7 +68,7 @@ async def structured(system: str, user: str, schema: Type[T], temperature: float
     last_err = ""
     for attempt in range(retries + 1):
         msg = user if not last_err else f"{user}\n\nПредыдущий ответ был невалиден: {last_err}. Исправь."
-        raw = await chat(sys, msg, temperature=temperature, json_mode=True)
+        raw = await chat(sys, msg, temperature=temperature, json_mode=True, model=model)
         try:
             return schema.model_validate_json(_extract_json(raw))
         except (ValidationError, ValueError) as e:

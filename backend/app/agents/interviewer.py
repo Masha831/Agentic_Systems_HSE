@@ -67,7 +67,7 @@ class Interviewer(Agent[InterviewerResult]):
         transcript = prompt
         ctx["tool_calls"] = []
         for _ in range(MAX_TOOL_CALLS):
-            step = await llm.structured(system, transcript, InterviewerStep, temperature=self.temperature)
+            step = await llm.structured(system, transcript, InterviewerStep, temperature=self.temperature, model=self.model)
             if step.final:
                 return step.final
             if not step.tool:
@@ -75,7 +75,7 @@ class Interviewer(Agent[InterviewerResult]):
             out = memory.call(step.tool, step.args, ctx["story"]["id"])
             ctx["tool_calls"].append({"tool": step.tool, "args": step.args, "result": out})
             transcript += f"\n\nВызов {step.tool}({json.dumps(step.args, ensure_ascii=False)}) вернул:\n{dump(out)}"
-        return await llm.structured(self.system, transcript + "\n\nСведений достаточно — дай итог.", InterviewerResult, temperature=self.temperature)
+        return await llm.structured(self.system, transcript + "\n\nСведений достаточно — дай итог.", InterviewerResult, temperature=self.temperature, model=self.model)
 
     def mock(self, ctx: dict) -> InterviewerResult:
         """Без LLM — идём по сценарию из seed.json (scripts), как в прототипе."""
