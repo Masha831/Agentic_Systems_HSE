@@ -37,6 +37,19 @@ services:
       - caddy
     restart: unless-stopped
 
+  # Постоянный адрес на своём домене: именованный туннель Cloudflare. Туннель и публичное имя
+  # (hostname → http://caddy:8080) создаются в панели Cloudflare Zero Trust, токен — в .env (TUNNEL_TOKEN).
+  # Запуск: make domain
+  tunnel-domain:
+    image: cloudflare/cloudflared:latest
+    profiles: ["domain"]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      - caddy
+    restart: unless-stopped
+
 volumes:
   pomnu-data:
     name: pomnu-data

@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 
-.PHONY: deploy test logs public reset-db
+.PHONY: deploy test logs public domain reset-db
 
 deploy: ## обновить код и пересобрать
 	git pull
@@ -21,6 +21,10 @@ public: ## поднять всё вместе с туннелем и показ�
 	  url=$$($(COMPOSE) logs tunnel 2>&1 | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | tail -1); \
 	  if [ -n "$$url" ]; then echo "$$url"; exit 0; fi; sleep 2; \
 	done; echo "Адрес не появился, смотрите: $(COMPOSE) logs tunnel"; exit 1
+
+domain: ## поднять всё с именованным туннелем на своём домене (нужен TUNNEL_TOKEN в .env)
+	@grep -q '^TUNNEL_TOKEN=.\+' .env || { echo "Задайте TUNNEL_TOKEN в .env (токен туннеля Cloudflare)"; exit 1; }
+	$(COMPOSE) --profile domain up -d --build
 
 reset-db: ## удалить БД и записи (том pomnu-data)
 	@read -p "Удалить ВСЕ истории, записи и фото? Введите yes: " ans; \
