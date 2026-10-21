@@ -12,11 +12,11 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from . import config, llm, store
+from . import config, llm, store, photo_analysis
 from .agents.archivist import archivist
 from .agents.editor import editor
 from .agents.interviewer import interviewer
-from .models import ArchivistResult, IntroResult, Question, Story
+from .models import ArchivistResult, IntroResult, Question, Story, Image
 
 
 def _story(sid: str) -> dict:
@@ -39,6 +39,7 @@ def _set_topic(s: dict, tid: Optional[str], status: str, title: str = "") -> Non
 
 async def next_question(s: dict, event: str) -> dict:
     """Интервьюер → вопрос; план тем и continueNote сохраняются в историю."""
+    await photo_analysis.prepare(s)
     ctx = store.story_context(s["id"]) | {"story": s, "event": event}
     res = await interviewer.run(ctx)
     s["topics"] = [t.model_dump() for t in res.topics]
@@ -106,19 +107,25 @@ async def get_question(sid: str) -> dict:
     return await next_question(s, TEXTS["events"]["return_after_break"])
 
 
-def _photo_question(s: dict) -> dict:
+async def _photo_question(s: dict, photo: dict) -> dict:
+    s["interview"]["photo"] = photo
+    analysis = await photo_analysis.analyze(photo)
+    if analysis["status"] == "ready":
+        return await next_question(s, "Знакомство завершено. Пользователь начал историю с фото. "
+                                   "Задай один вопрос, опираясь на конкретную видимую деталь current-фото; "
+                                   "не угадывай личности и отношения. Тема вопроса — photo.")
     seed = json.loads(config.SEED_PATH.read_text())
     t = TEXTS["photo"]
     q = Question(text=seed["types"][s["type"]]["photoQuestion"], why=t["why"], topic="photo", topicTitle=t["topicTitle"]).model_dump()
     s["interview"]["question"] = q
     s["interview"]["asked"].append(q["text"])
-    s["interview"]["photo"] = s["cover"]
+    s["interview"]["photo"] = photo
     store.put("story", s["id"], s)
     return q
 
 
 async def answer(sid: str, text: str, typed: bool = False, edited: bool = False, audio: Optional[str] = None,
-                 dur: str = "0:00", photo: Optional[dict] = None) -> dict:
+                 dur: str = "0:00", photo: Optional[dict] = None, photo_provided: bool = False) -> dict:
     s = _story(sid)
     q = s["interview"].get("question") or await get_question(sid)
     s = _story(sid)
@@ -127,7 +134,11 @@ async def answer(sid: str, text: str, typed: bool = False, edited: bool = False,
     src_id = f"{sid}-{session}-{n}"
     is_intro = q.get("topic") == "intro"
     if not is_intro:
-        photo = photo or s["interview"].pop("photo", None)
+        pending_photo = s["interview"].pop("photo", None)
+        if photo is None and not photo_provided:
+            photo = pending_photo
+    if photo:
+        photo = Image.model_validate(photo).model_dump()
 
     # 1. оригинал сохраняется до любых агентов
     src = {"story": sid, "session": session, "n": n, "date": time.strftime("%d.%m"), "q": q["text"],
@@ -173,8 +184,8 @@ async def answer(sid: str, text: str, typed: bool = False, edited: bool = False,
     s["interview"]["question"] = None
     s["updated"] = "только что"
     store.put("story", sid, s)
-    if is_intro and s.get("cover"):
-        nq = _photo_question(s)
+    if is_intro and (photo or s.get("cover")):
+        nq = await _photo_question(s, photo or s["cover"])
     elif is_intro:
         nq = await next_question(s, TEXTS["events"]["first_question"])
     else:

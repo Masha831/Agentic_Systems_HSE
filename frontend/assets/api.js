@@ -32,7 +32,7 @@ window.API = (function () {
     assemble: (sid) => req('POST', `/api/stories/${sid}/chapters`),     // → {chapterId,chapter,story}
     trace: (sid) => req('GET', `/api/stories/${sid}/trace`),
     patch: (coll, id, body) => req('PATCH', `/api/${coll}/${id}`, body), // coll: people|places|chapters|sources|events|stories
-    upload(file) { const f = new FormData(); f.append('file', file); return req('POST', '/api/uploads', f, true); }, // → {src,w,h,alt}
+    upload(file) { const f = new FormData(); f.append('file', file); return req('POST', '/api/uploads', f, true); }, // → {src,w,h,alt,analysis}; original saved even if analysis unavailable
     ttsUrl: (text) => `/api/tts?text=${encodeURIComponent(text)}`
   };
 })();

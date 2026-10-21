@@ -101,7 +101,8 @@ class VoiceHTTPTests(unittest.TestCase):
             self.assertTrue(result.json()['question']['text'])
         chapter = self.client.post(f'/api/stories/{self.sid}/chapters')
         self.assertEqual(chapter.status_code, 200)
-        self.assertEqual(chapter.json()['chapter']['sources'], ids)
+        self.assertEqual(chapter.json()['chapter']['sources'], ids[1:])
+        self.assertTrue(store.get('source', ids[0])['intro'])
         state = self.client.get('/api/state').json()
         self.assertTrue(all(i in state['sources'] for i in ids))
 
