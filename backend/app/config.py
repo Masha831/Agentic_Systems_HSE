@@ -53,8 +53,8 @@ MOCK = os.getenv("MOCK", "0") == "1" or not LLM_HAS_KEY
 #               https://elevenlabs.io/docs/api-reference/text-to-speech/convert
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")  # TTS без голоса недоступен (UI берёт голос браузера)
-ELEVENLABS_STT_MODEL = os.getenv("ELEVENLABS_STT_MODEL", "scribe_v2")
-ELEVENLABS_TTS_MODEL = os.getenv("ELEVENLABS_TTS_MODEL", "eleven_multilingual_v2")
+ELEVENLABS_STT_MODEL = os.getenv("ELEVENLABS_STT_MODEL") or "scribe_v2"
+ELEVENLABS_TTS_MODEL = os.getenv("ELEVENLABS_TTS_MODEL") or "eleven_multilingual_v2"
 
 
 def _voice_provider(name: str) -> str:
