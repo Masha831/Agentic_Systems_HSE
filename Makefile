@@ -19,10 +19,14 @@ release: ## выкатить текущий коммит без git pull (то �
 	@if [ ! -f .release-current ] && docker image inspect pomnu-app:latest >/dev/null 2>&1; then \
 	  docker tag pomnu-app:latest pomnu-app:before-rollback-setup && echo before-rollback-setup > .release-current; fi
 	$(MAKE) backup
+	@# при провале откатываемся, и «предыдущим» снова становится прежний релиз, а не сломанный
+	@cp -f .release-previous .release-previous.bak 2>/dev/null || rm -f .release-previous.bak
 	@[ "$$(cat .release-current 2>/dev/null)" = "$(SHA)" ] || cp -f .release-current .release-previous 2>/dev/null || true
 	@echo $(SHA) > .release-current
-	IMAGE_TAG=$(SHA) $(COMPOSE) up -d --no-build --wait app caddy || { $(MAKE) rollback; exit 1; }
-	$(MAKE) smoke || { echo "Проверка не прошла — откатываюсь"; $(MAKE) rollback; exit 1; }
+	IMAGE_TAG=$(SHA) $(COMPOSE) up -d --no-build --wait app caddy && $(MAKE) smoke || { \
+	  echo "Релиз $(SHA) не поднялся — откатываюсь"; $(MAKE) rollback; \
+	  if [ -f .release-previous.bak ]; then mv -f .release-previous.bak .release-previous; else rm -f .release-previous; fi; exit 1; }
+	@rm -f .release-previous.bak
 	docker tag pomnu-app:$(SHA) pomnu-app:latest
 	@echo "Релиз $(SHA) работает. Откат: make rollback"
 

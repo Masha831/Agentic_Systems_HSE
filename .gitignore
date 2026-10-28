@@ -8,5 +8,4 @@ backend/data/
 .vscode/
 # make deploy / backup
 backups/
-.release-current
-.release-previous
+.release-*
