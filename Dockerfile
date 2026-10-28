@@ -20,6 +20,10 @@ RUN useradd --create-home --uid 1000 app \
     && mkdir -p backend/data && chown -R app:app backend/data
 USER app
 
+# Какой коммит в образе — видно в /api/health (make deploy передаёт IMAGE_TAG)
+ARG GIT_SHA=dev
+ENV GIT_SHA=$GIT_SHA
+
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"

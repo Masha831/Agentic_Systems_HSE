@@ -1243,7 +1243,7 @@
     if (!list.length) return '<p class="help">Агенты по этой истории ещё не запускались.</p>';
     return `<ol class="od-stack" style="--od-gap:16px;list-style:none;padding:0;margin:0">${list.slice().reverse().map((t) => `
       <li class="od-stack" style="--od-gap:4px">
-        <p><strong>${esc(AGENT[t.agent] || t.agent)}</strong> <span class="help">· ${esc(t.at || '')} · ${(t.ms / 1000).toFixed(1)} с · ${esc(t.mock ? 'MOCK' : (t.model || ''))}</span></p>
+        <p><strong>${esc(AGENT[t.agent] || t.agent)}</strong> <span class="help">· ${esc(t.at || '')} · ${(t.ms / 1000).toFixed(1)} с · ${esc(t.mock ? 'MOCK' : (t.model || ''))}</span>${t.fallback ? ` <span class="help" style="color:#b3261e" title="${esc(t.error || '')}">· ошибка LLM, ответ-заглушка</span>` : ''}</p>
         ${(t.tool_calls || []).map((c) => `<p class="help">${icon('i-users', 'ico-sm')} память: ${esc(TOOL[c.tool] || c.tool)}(${esc(Object.values(c.args || {}).join(', '))}) → ${Array.isArray(c.result) ? `${c.result.length} ${plural(c.result.length, 'результат', 'результата', 'результатов')}` : (c.result ? 'найдено' : 'пусто')}</p>`).join('')}
         <p>${esc(traceSummary(t))}</p>
         <details><summary class="help">Ответ агента целиком</summary><pre style="white-space:pre-wrap;font-size:12px;max-height:240px;overflow:auto">${esc(JSON.stringify(t.result, null, 1))}</pre></details>

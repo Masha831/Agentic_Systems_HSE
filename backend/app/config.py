@@ -47,6 +47,8 @@ ALLOWED_ORIGINS = {h.strip().lower() for h in os.getenv("ALLOWED_ORIGINS", "").s
 
 LLM_HAS_KEY = bool(OPENROUTER_API_KEY) if _OR else bool(YANDEX_API_KEY and YANDEX_FOLDER_ID)
 MOCK = os.getenv("MOCK", "0") == "1" or not LLM_HAS_KEY
+# 1 (по умолчанию) — при ошибке LLM агент отвечает заглушкой и помечает это в журнале; 0 — ошибка (эвалы)
+AGENT_FALLBACK = os.getenv("AGENT_FALLBACK", "1") == "1"
 
 # --- Голос: ElevenLabs (Scribe v2 + TTS) / Yandex SpeechKit (переключатель) -------------------
 # Документация: https://elevenlabs.io/docs/api-reference/speech-to-text/convert

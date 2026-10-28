@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -16,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import config, orchestrator, speech, store, answer_delivery, speech_stream, photo_analysis
+from .agents import base as agents_base
 
 logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Помню API")
@@ -64,7 +66,9 @@ def _404(fn):
 def health():
     # live_stt: живая расшифровка идёт только через Yandex SpeechKit v3 (speech_stream.handle).
     live_stt = bool(config.YANDEX_API_KEY) and not config.MOCK
-    return {"ok": True, "mock": config.MOCK, "provider": config.LLM_PROVIDER, "model": config.LLM_MODEL, "live_stt": live_stt}
+    return {"ok": True, "version": os.getenv("GIT_SHA", "dev"), "mock": config.MOCK, "provider": config.LLM_PROVIDER,
+            "model": config.LLM_MODEL, "stt": config.STT_PROVIDER, "tts": config.TTS_PROVIDER, "live_stt": live_stt,
+            "fallbacks": agents_base.FALLBACKS}
 
 
 @app.get("/api/state")
