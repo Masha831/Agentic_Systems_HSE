@@ -1,0 +1,26 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Образ
+        run: docker build --build-arg GIT_SHA=${GITHUB_SHA::7} -t pomnu-app:ci .
+      - name: Тесты Python (MOCK=1, без платных вызовов)
+        run: docker run --rm -e MOCK=1 pomnu-app:ci python -m unittest discover -s tests
+      - name: Тесты фронта
+        run: node --test tests/*.cjs
+      - name: Сервер стартует и отвечает /api/health
+        run: |
+          docker run -d --name smoke -e MOCK=1 -p 8000:8000 pomnu-app:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/api/health && exit 0
+            sleep 1
+          done
+          docker logs smoke; exit 1

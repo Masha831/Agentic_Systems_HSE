@@ -6,3 +6,6 @@ backend/data/
 .DS_Store
 .idea/
 .vscode/
+# make deploy / backup
+backups/
+.release-*

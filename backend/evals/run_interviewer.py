@@ -10,6 +10,8 @@ import os
 import sys
 from pathlib import Path
 
+# Ошибка LLM должна валить проверку, а не подменяться заглушкой, которая «пройдёт»
+os.environ.setdefault("AGENT_FALLBACK", "0")
 os.environ.setdefault("DB_PATH", "backend/data/eval.sqlite3")
 Path(os.environ["DB_PATH"]).unlink(missing_ok=True)
 

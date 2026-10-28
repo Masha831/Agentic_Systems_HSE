@@ -1,7 +1,11 @@
 services:
   app:
-    build: .
-    image: pomnu-app
+    build:
+      context: .
+      args:
+        GIT_SHA: ${IMAGE_TAG:-dev}
+    # Тег образа = коммит релиза (make deploy). Откат: make rollback — поднимает предыдущий тег без сборки.
+    image: ${APP_IMAGE:-pomnu-app}:${IMAGE_TAG:-latest}
     # .env необязателен: без ключей приложение само включит MOCK
     env_file:
       - path: .env
@@ -12,7 +16,7 @@ services:
     volumes:
       - pomnu-data:/app/backend/data
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
     restart: unless-stopped
 
   caddy:
@@ -24,7 +28,7 @@ services:
       # CADDYFILE=./Caddyfile.open в .env отключает пароль (по умолчанию пароль включён)
       - ${CADDYFILE:-./Caddyfile}:/etc/caddy/Caddyfile:ro
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${CADDY_PORT:-8080}:8080"
     depends_on:
       - app
     restart: unless-stopped
@@ -53,4 +57,5 @@ services:
 
 volumes:
   pomnu-data:
-    name: pomnu-data
+    # make staging подменяет том, чтобы не трогать данные прода
+    name: ${DATA_VOLUME:-pomnu-data}

@@ -1,0 +1,17 @@
+# Дополнение к docker-compose.yml: Caddy сам держит HTTPS на <ip>.sslip.io (сервер с публичным IP, порты 80/443).
+# Включение — в .env: COMPOSE_FILE=docker-compose.yml:docker-compose.sslip.yml и PUBLIC_HOST=1-2-3-4.sslip.io
+services:
+  caddy:
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?Задайте PUBLIC_HOST=<ip через дефисы>.sslip.io в .env}
+    volumes:
+      - ./Caddyfile.sslip:/etc/caddy/Caddyfile:ro
+      # сертификаты переживают перезапуск: иначе каждый раз новый выпуск и упор в общий лимит sslip.io
+      - caddy-data:/data
+    ports:
+      - "80:80"
+      - "443:443"
+
+volumes:
+  caddy-data:
+    name: pomnu-caddy-data

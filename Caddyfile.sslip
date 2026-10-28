@@ -1,0 +1,22 @@
+# HTTPS прямо на сервере с публичным IP, без своего домена и Cloudflare: адрес вида 1-2-3-4.sslip.io.
+# Caddy сам получает сертификат Let's Encrypt (нужны открытые порты 80 и 443). Подключается через
+# COMPOSE_FILE=docker-compose.yml:docker-compose.sslip.yml и PUBLIC_HOST в .env (см. README, «Деплой»).
+{
+	admin off
+}
+
+{$PUBLIC_HOST} {
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
+	reverse_proxy app:8000 {
+		# WebSocket живой расшифровки и долгое распознавание: таймауты ≥ 330 с (docs/voice-check.md)
+		flush_interval -1
+		transport http {
+			dial_timeout 10s
+			read_timeout 360s
+			write_timeout 360s
+		}
+	}
+}
